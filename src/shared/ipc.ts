@@ -97,6 +97,7 @@ export interface IpcApi {
   };
   devices: {
     listByBranch(branchId: string): Promise<Result<Device[]>>;
+    listByClient(clientId: string): Promise<Result<Device[]>>;
     create(input: Partial<Device>): Promise<Result<Device>>;
     update(id: string, patch: Partial<Device>): Promise<Result<Device>>;
     remove(id: string): Promise<Result<null>>;
@@ -105,6 +106,7 @@ export interface IpcApi {
   };
   documents: {
     listByClient(clientId: string): Promise<Result<DocumentRecord[]>>;
+    listByBranch(branchId: string): Promise<Result<DocumentRecord[]>>;
     add(clientId: string | null, branchId: string | null, kind: string, title: string, sourcePath: string): Promise<Result<DocumentRecord>>;
     remove(id: string): Promise<Result<null>>;
     open(id: string): Promise<Result<null>>;
@@ -176,11 +178,14 @@ export interface IpcApi {
     now(): Promise<Result<{ path: string }>>;
     exportEncrypted(): Promise<Result<{ path: string }>>;
     restore(sourcePath: string): Promise<Result<null>>;
+    /** Wipes ALL data back to empty. Requires the master password. */
+    factoryReset(password: string): Promise<Result<null>>;
   };
   files: {
     pickOpen(filters?: { name: string; extensions: string[] }[]): Promise<Result<string | null>>;
     pickSave(defaultName: string): Promise<Result<string | null>>;
     saveDataUrl(dataUrl: string, suggestedName: string): Promise<Result<MediaRef>>;
+    importDocument(sourcePath: string): Promise<Result<MediaRef>>;
   };
   settings: {
     get(key: string): Promise<Result<string | null>>;
@@ -193,9 +198,12 @@ export interface IpcApi {
     setHost(): Promise<Result<null>>;
     discover(): Promise<Result<{ name: string; address: string; port: number }[]>>;
     connect(address: string, port: number): Promise<Result<null>>;
+    disconnect(): Promise<Result<null>>;
   };
   app: {
     about(): Promise<Result<AboutInfo>>;
+    /** Populates demo data (لفة ورق عنب + samples) for a ready-to-explore app. */
+    seedDemoData(): Promise<Result<{ clients: number }>>;
   };
 }
 

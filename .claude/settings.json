@@ -12,7 +12,14 @@
       "Bash(grep -viE \"^\\\\s*$\")",
       "Bash(ELECTRON_RUN_AS_NODE=1 \"./node_modules/electron/dist/electron.exe\" \"C:/Users/A/AppData/Local/Temp/claude/g--projects-AlAqsa/d6ed7227-ce04-43c0-a7d4-f14e33594480/scratchpad/sqltest.js\")",
       "Bash(git add *)",
-      "Bash(git commit -q -m ' *)"
+      "Bash(git commit -q -m ' *)",
+      "Bash(mkdir -p \"g:/projects/AlAqsa/assets/fonts\")",
+      "Bash(curl -sL -o NotoNaskhArabic-Regular.ttf \"https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic%5Bwght%5D.ttf\")",
+      "Bash(rm -f *.ttf)",
+      "Bash(curl -sL -o reg.ttf \"https://raw.githubusercontent.com/google/fonts/main/ofl/notonaskharabic/NotoNaskhArabic%5Bwght%5D.ttf\")",
+      "Bash(pip install *)",
+      "Bash(curl -sL -o OFL.txt \"https://raw.githubusercontent.com/google/fonts/main/ofl/notonaskharabic/OFL.txt\")",
+      "Bash(npx tsc *)"
     ]
   }
 }
