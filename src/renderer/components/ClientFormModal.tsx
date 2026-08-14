@@ -153,6 +153,7 @@ export function ClientFormModal({
     <Modal
       open={open}
       title={client ? t.clients.editClient : t.clients.newClient}
+      onSubmit={save}
       onClose={onClose}
       size="lg"
       footer={

@@ -267,4 +267,62 @@ export const MIGRATIONS: Migration[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// v2 — staff directory, free-form notes timeline, invoice tax/contract fields,
+// and flexible AMC visit counting. Added as a migration so an installed copy
+// upgrades in place without losing anything.
+// ---------------------------------------------------------------------------
+MIGRATIONS.push({
+  version: 2,
+  up: /* sql */ `
+    CREATE TABLE staff (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      role TEXT,
+      phone TEXT,
+      email TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      is_temporary INTEGER NOT NULL DEFAULT 0,
+      notes TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_staff_name ON staff(name);
+
+    -- Free-form, dated notes attached to a client / branch / device.
+    CREATE TABLE note_entries (
+      id TEXT PRIMARY KEY,
+      client_id TEXT,
+      branch_id TEXT,
+      device_id TEXT,
+      body TEXT NOT NULL,
+      author TEXT,
+      pinned INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+      FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_notes_client ON note_entries(client_id);
+    CREATE INDEX idx_notes_branch ON note_entries(branch_id);
+    CREATE INDEX idx_notes_created ON note_entries(created_at);
+
+    -- Invoice: VAT/TRN + line items + signature block for printing as a contract.
+    ALTER TABLE invoices ADD COLUMN trn TEXT;
+    ALTER TABLE invoices ADD COLUMN tax_rate REAL NOT NULL DEFAULT 0;
+    ALTER TABLE invoices ADD COLUMN tax_amount REAL NOT NULL DEFAULT 0;
+    ALTER TABLE invoices ADD COLUMN subtotal REAL NOT NULL DEFAULT 0;
+    ALTER TABLE invoices ADD COLUMN items TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE invoices ADD COLUMN terms TEXT;
+
+    -- AMC: allow open-ended contracts (visits "as needed") and link visits to
+    -- the contract they consumed, so counting is derived rather than typed.
+    ALTER TABLE amc_contracts ADD COLUMN unlimited_visits INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE visits ADD COLUMN amc_contract_id TEXT;
+    ALTER TABLE visits ADD COLUMN counts_against_amc INTEGER NOT NULL DEFAULT 1;
+    CREATE INDEX idx_visits_amc ON visits(amc_contract_id);
+
+    -- Technician recorded on a visit can now reference the staff directory.
+    ALTER TABLE visits ADD COLUMN technician_id TEXT;
+  `,
+});
+
 export const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

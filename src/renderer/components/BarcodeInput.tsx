@@ -17,17 +17,25 @@ const SCANNER_MAX_GAP_MS = 35;
 const SCANNER_MIN_LENGTH = 4;
 
 export function BarcodeInput({
-  value, onChange, onScan, error,
+  value, onChange, onScan, error, autoFocus,
 }: {
   value: string;
   onChange: (v: string) => void;
   onScan?: (v: string) => void;
   error?: boolean;
+  autoFocus?: boolean;
 }) {
   const { t } = useI18n();
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const lastKeyTime = useRef(0);
   const burstLength = useRef(0);
+
+  // Focusing the field is all it should take to be ready for the reader.
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const now = performance.now();
@@ -53,12 +61,16 @@ export function BarcodeInput({
     <>
       <div className="row gap-6">
         <input
+          ref={inputRef}
           className={`input mono ${error ? 'invalid' : ''}`}
+          style={focused ? { borderColor: 'var(--success)', boxShadow: '0 0 0 3px rgba(34,197,94,.18)' } : undefined}
           value={value}
           dir="ltr"
           placeholder={t.devices.scanHint}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
         />
         <button
           type="button"
@@ -69,6 +81,11 @@ export function BarcodeInput({
           📷
         </button>
       </div>
+      {focused && (
+        <span className="tiny" style={{ color: 'var(--success)', fontWeight: 600 }}>
+          ⚡ {t.devices.scanReady}
+        </span>
+      )}
 
       <CameraScanModal
         open={cameraOpen}

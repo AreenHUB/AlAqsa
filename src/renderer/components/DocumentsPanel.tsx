@@ -97,8 +97,12 @@ export function DocumentsPanel({
                   <span style={{ fontSize: 26 }}>{fileIcon(d.media.mimeType)}</span>
                   <div className="row gap-4">
                     {expiryBadge(d)}
-                    <button className="btn btn-ghost btn-icon btn-sm"
-                      onClick={(e) => { e.stopPropagation(); setDeleting(d); }}>🗑</button>
+                    <button
+                      className="btn btn-danger btn-icon btn-sm"
+                      title={t.common.delete}
+                      aria-label={t.common.delete}
+                      onClick={(e) => { e.stopPropagation(); setDeleting(d); }}
+                    >🗑</button>
                   </div>
                 </div>
                 <div className="bold truncate" style={{ fontSize: 13.5 }}>{d.title}</div>

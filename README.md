@@ -102,7 +102,7 @@ Electron 32 · React 18 · TypeScript 5 · SQLCipher (better-sqlite3-multiple-ci
 
 ## ⚖️ الترخيص وحقوق الملكية
 
-**© 2026 أرين أبو فاخر — جميع الحقوق محفوظة**
+**© 2026 عرين أبو فخر — جميع الحقوق محفوظة**
 
 هذا التطبيق مملوك بالكامل للمبرمج المذكور. لا يجوز نسخه أو تعديله أو إعادة توزيعه دون إذن خطي.
 
@@ -110,7 +110,7 @@ Electron 32 · React 18 · TypeScript 5 · SQLCipher (better-sqlite3-multiple-ci
 
 ## 👨‍💻 المبرمج
 
-**أرين أبو فاخر** — Areen Abou Fakher
+**عرين أبو فخر** — Areen Abou Fakher
 
 - 📱 +971509471769
 - ✉️ arin.aboufakher@gmail.com

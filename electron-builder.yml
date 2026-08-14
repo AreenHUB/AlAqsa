@@ -13,12 +13,18 @@ directories:
   output: release
   buildResources: build
 
+# Keep this list conservative. Aggressive exclusions previously dropped
+# transitive dependencies of pdfmake (call-bind-apply-helpers), which only
+# surfaced at runtime as "Cannot find module" when generating a report.
+#
+# The explicit node_modules entry re-includes packages that electron-builder's
+# default heuristics prune; without it the pdfmake dependency chain is
+# incomplete in the asar even though it is present in node_modules.
 files:
   - dist/**/*
   - package.json
+  - node_modules/**/*
   - '!**/*.map'
-  - '!**/node_modules/*/{test,__tests__,tests,example,examples,doc,docs}/**'
-  - '!**/*.{md,markdown,txt}'
 
 # Arabic fonts are needed at runtime for PDF generation.
 extraResources:

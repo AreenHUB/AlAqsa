@@ -8,7 +8,7 @@ export const APP_VERSION = '1.0.0';
 
 export const AUTHOR = {
   name: 'Areen Abou Fakher',
-  nameAr: 'أرين أبو فاخر',
+  nameAr: 'عرين أبو فخر',
   email: 'arin.aboufakher@gmail.com',
   phone: '+971509471769',
   github: 'AreenHUB',

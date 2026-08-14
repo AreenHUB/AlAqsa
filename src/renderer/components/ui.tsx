@@ -66,7 +66,7 @@ export function useToast(): ToastApi {
 // Modal
 // ---------------------------------------------------------------------------
 export function Modal({
-  open, title, onClose, children, footer, size = 'md',
+  open, title, onClose, children, footer, size = 'md', onSubmit,
 }: {
   open: boolean;
   title: string;
@@ -74,20 +74,54 @@ export function Modal({
   children: React.ReactNode;
   footer?: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Called on Enter. Ignored inside textareas and on buttons/selects, so
+   *  multi-line notes and normal keyboard navigation still behave. */
+  onSubmit?: () => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return; }
+
+      if (e.key === 'Enter' && onSubmit) {
+        const el = document.activeElement as HTMLElement | null;
+        const tag = el?.tagName;
+        if (tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'SELECT') return;
+        if (el?.isContentEditable) return;
+        e.preventDefault();
+        onSubmit();
+        return;
+      }
+
+      // Keep Tab focus inside the dialog.
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        } else if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, onSubmit]);
 
   if (!open) return null;
   const sizeClass = size === 'md' ? '' : `modal-${size}`;
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`modal ${sizeClass}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={dialogRef} className={`modal ${sizeClass}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head">
           <h3 className="modal-title">{title}</h3>
           <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose} aria-label="close">✕</button>

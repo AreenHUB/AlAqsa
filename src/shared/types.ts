@@ -94,7 +94,14 @@ export type DeviceType =
   | 'ups'
   | 'other';
 
-export type DeviceSource = 'ours' | 'external'; // من محلنا / من مكان آخر
+/**
+ * Where the device came from.
+ *  - ours     : sold/installed by us, full details known
+ *  - existing : the client already owned it (e.g. brought from abroad); the
+ *               details are often unknown and must NOT be mandatory
+ *  - mixed    : client had equipment and also bought some from us
+ */
+export type DeviceSource = 'ours' | 'existing' | 'mixed';
 
 export type HealthState = 'excellent' | 'good' | 'warning' | 'faulty';
 

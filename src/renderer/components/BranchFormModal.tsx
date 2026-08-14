@@ -99,6 +99,7 @@ export function BranchFormModal({
     <Modal
       open={open}
       title={branch ? t.branches.editBranch : t.branches.newBranch}
+      onSubmit={save}
       onClose={onClose}
       footer={
         <>

@@ -38,7 +38,6 @@ export function Shell({ onLock }: { onLock: () => void }) {
     () => (localStorage.getItem('alaqsa.theme') as 'light' | 'dark') ?? 'light',
   );
   const [collapsed, setCollapsed] = useState(false);
-  const [dataVersion, setDataVersion] = useState(0);
 
   // Apply + persist theme.
   useEffect(() => {
@@ -63,13 +62,11 @@ export function Shell({ onLock }: { onLock: () => void }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Live data + reminder notifications from the main process.
+  // Reminder notifications from the main process.
   useEffect(() => {
-    const offData = window.alaqsa.events.onDataChanged(() => setDataVersion((v) => v + 1));
-    const offReminder = window.alaqsa.events.onReminderDue((r: Reminder) => {
+    return window.alaqsa.events.onReminderDue((r: Reminder) => {
       toast.warning(`🔔 ${r.title}`);
     });
-    return () => { offData(); offReminder(); };
   }, [toast]);
 
   const lock = useCallback(async () => {
@@ -214,7 +211,11 @@ export function Shell({ onLock }: { onLock: () => void }) {
           </div>
         </header>
 
-        <main style={{ flex: 1, overflow: 'auto', padding: 24 }} key={dataVersion}>
+        {/* NOTE: deliberately not keyed on a data version. Remounting here
+            reset every screen to its first tab after each save/delete, which
+            made adding several documents in a row painful. Screens refresh
+            their own data instead. */}
+        <main style={{ flex: 1, overflow: 'auto', padding: 24 }}>
           {route.name === 'dashboard' && <DashboardScreen navigate={navigate} />}
           {route.name === 'clients' && <ClientsScreen navigate={navigate} />}
           {route.name === 'client' && (

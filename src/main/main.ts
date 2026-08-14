@@ -55,6 +55,11 @@ const ctx: AppContext = {
 };
 
 // Only one instance may run (avoids two processes writing the same DB).
+// Chromium ships the Shape Detection API (BarcodeDetector) behind a flag.
+// Without this the camera scanner reports "not supported on this device",
+// which is what the hardware-reader-less fallback was hitting.
+app.commandLine.appendSwitch('enable-features', 'ShapeDetection,BarcodeDetector');
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -84,6 +89,9 @@ function createWindow(): void {
     backgroundColor: config.theme === 'dark' ? '#0d1520' : '#F7F9FC',
     title: APP_NAME,
     icon: path.join(__dirname, '../../build/icon.ico'),
+    // Hide the native menu bar; the app draws its own modern menu. The menu
+    // still exists so its keyboard accelerators keep working.
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       // Security hardening: renderer has no direct Node access.
@@ -97,7 +105,15 @@ function createWindow(): void {
 
   ctx.mainWindow = win;
 
+  win.setMenuBarVisibility(false);
   win.once('ready-to-show', () => win.show());
+
+  // Allow the in-app camera scanner (and nothing else). Electron denies media
+  // access by default, which made getUserMedia fail silently.
+  win.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'media');
+  });
+  win.webContents.session.setPermissionCheckHandler((_wc, permission) => permission === 'media');
 
   // Block navigation away from the app and open external links in the browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -129,34 +145,49 @@ app.whenReady().then(() => {
   registerIpcHandlers(ctx);
   startReminderScheduler(ctx);
 
-  // Minimal application menu (kept small; the UI has its own navigation).
-  Menu.setApplicationMenu(
-    Menu.buildFromTemplate([
-      {
-        label: 'AlAqsa',
-        submenu: [
-          { role: 'reload' },
-          { role: 'toggleDevTools', visible: isDev },
-          { type: 'separator' },
-          { role: 'quit' },
-        ],
-      },
-      {
-        label: 'Edit',
-        submenu: [
-          { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
-          { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
-        ],
-      },
-      {
-        label: 'View',
-        submenu: [
-          { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'resetZoom' },
-          { type: 'separator' }, { role: 'togglefullscreen' },
-        ],
-      },
-    ]),
-  );
+  // The window is frameless-styled by the renderer, so the native menu bar is
+  // hidden. Accelerators are still registered here (an invisible menu keeps
+  // them working), which is what makes Ctrl +/-, Ctrl+0, undo/redo and the
+  // clipboard roles respond to the keyboard without a visible menu bar.
+  const menu = Menu.buildFromTemplate([
+    {
+      label: 'AlAqsa',
+      submenu: [
+        { role: 'reload', accelerator: 'CmdOrCtrl+R' },
+        { role: 'toggleDevTools', visible: isDev, accelerator: 'F12' },
+        { type: 'separator' },
+        { role: 'quit', accelerator: 'CmdOrCtrl+Q' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo', accelerator: 'CmdOrCtrl+Z' },
+        { role: 'redo', accelerator: 'CmdOrCtrl+Shift+Z' },
+        { type: 'separator' },
+        { role: 'cut', accelerator: 'CmdOrCtrl+X' },
+        { role: 'copy', accelerator: 'CmdOrCtrl+C' },
+        { role: 'paste', accelerator: 'CmdOrCtrl+V' },
+        { role: 'selectAll', accelerator: 'CmdOrCtrl+A' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'zoomIn', accelerator: 'CmdOrCtrl+Plus' },
+        // Register the numpad/secondary bindings too: on many keyboards the
+        // "+" key only reports as Shift+= or numadd.
+        { role: 'zoomIn', accelerator: 'CmdOrCtrl+=', visible: false },
+        { role: 'zoomIn', accelerator: 'CmdOrCtrl+numadd', visible: false },
+        { role: 'zoomOut', accelerator: 'CmdOrCtrl+-' },
+        { role: 'zoomOut', accelerator: 'CmdOrCtrl+numsub', visible: false },
+        { role: 'resetZoom', accelerator: 'CmdOrCtrl+0' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', accelerator: 'F11' },
+      ],
+    },
+  ]);
+  Menu.setApplicationMenu(menu);
 
   createWindow();
 

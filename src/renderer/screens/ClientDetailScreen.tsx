@@ -51,6 +51,9 @@ export function ClientDetailScreen({
   const [deleting, setDeleting] = useState<{ kind: 'branch' | 'device' | 'visit'; id: string } | null>(null);
   const [expandedBranch, setExpandedBranch] = useState<string | null>(null);
 
+  /** Refresh data in place. The active tab is React state and is intentionally
+   *  left untouched, so saving or deleting never bounces the user back to
+   *  "Overview" mid-task. */
   const load = useCallback(async () => {
     const [c, ct, b, d, v, l] = await Promise.all([
       window.alaqsa.clients.get(clientId),
@@ -425,8 +428,10 @@ export function ClientDetailScreen({
                       <td className="small">{d.model ?? '—'}</td>
                       <td className="mono tiny" dir="ltr">{d.serialNumber ?? '—'}</td>
                       <td>
-                        <Badge kind={d.source === 'ours' ? 'success' : 'neutral'}>
-                          {d.source === 'ours' ? t.devices.sourceOurs : t.devices.sourceExternal}
+                        <Badge kind={d.source === 'ours' ? 'success' : d.source === 'mixed' ? 'info' : 'neutral'}>
+                          {d.source === 'ours' ? t.devices.sourceOurs
+                            : d.source === 'mixed' ? t.devices.sourceMixed
+                            : t.devices.sourceExisting}
                         </Badge>
                       </td>
                       <td>{healthBadge(d.health)}</td>

@@ -27,7 +27,8 @@
       "Bash(timeout 25 ./node_modules/.bin/electron.cmd .)",
       "Bash(timeout 25 ./node_modules/electron/dist/electron.exe .)",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\); console.log\\('package.json valid'\\)\")",
-      "Bash(unset ELECTRON_RUN_AS_NODE)"
+      "Bash(unset ELECTRON_RUN_AS_NODE)",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('deps:', d.get\\('dependencies'\\)\\)\")"
     ]
   }
 }

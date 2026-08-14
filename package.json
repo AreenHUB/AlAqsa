@@ -26,15 +26,16 @@
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
   },
   "dependencies": {
-    "better-sqlite3-multiple-ciphers": "^11.5.0",
     "bcryptjs": "^2.4.3",
+    "better-sqlite3-multiple-ciphers": "^11.5.0",
+    "bonjour-service": "^1.2.1",
+    "call-bind-apply-helpers": "^1.0.2",
     "date-fns": "^3.6.0",
-    "exceljs": "^4.4.0",
     "docx": "^8.5.0",
+    "exceljs": "^4.4.0",
+    "jsbarcode": "^3.11.6",
     "pdfmake": "^0.2.10",
     "qrcode": "^1.5.4",
-    "jsbarcode": "^3.11.6",
-    "bonjour-service": "^1.2.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {

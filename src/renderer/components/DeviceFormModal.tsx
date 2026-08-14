@@ -39,7 +39,7 @@ export function DeviceFormModal({
   const [channels, setChannels] = useState('');
   const [capacity, setCapacity] = useState('');
   const [firmware, setFirmware] = useState('');
-  const [source, setSource] = useState<'ours' | 'external'>('ours');
+  const [source, setSource] = useState<'ours' | 'existing' | 'mixed'>('ours');
   const [installDate, setInstallDate] = useState('');
   const [warrantyExpiry, setWarrantyExpiry] = useState('');
   const [health, setHealth] = useState('');
@@ -96,16 +96,50 @@ export function DeviceFormModal({
     }
   };
 
-  /** Serial captured from a hardware reader or camera scan. */
+  /**
+   * Serial captured from a hardware reader or camera scan.
+   *
+   * If the serial is already registered, the known details are copied into the
+   * form immediately so the technician does not retype them; otherwise we fall
+   * back to matching the shop inventory by model/serial prefix. This is the
+   * "scan and it fills itself" behaviour requested for field work.
+   */
   const onScan = async (scanned: string) => {
-    setSerial(scanned);
-    // Warn immediately if this serial already belongs to another device.
-    const res = await window.alaqsa.devices.findBySerial(scanned);
-    if (res.ok && res.data && res.data.id !== device?.id) {
-      setErrors((e) => ({ ...e, serial: t.devices.duplicateSerial }));
-      toast.warning(t.devices.duplicateSerial);
-    } else {
-      setErrors((e) => { const { serial: _drop, ...rest } = e; return rest; });
+    const code = scanned.trim();
+    setSerial(code);
+    if (!code) return;
+
+    const res = await window.alaqsa.devices.findBySerial(code);
+    if (res.ok && res.data) {
+      const found = res.data;
+      if (found.id !== device?.id) {
+        // Same serial on a different record: warn, but still show what we know.
+        setErrors((e) => ({ ...e, serial: t.devices.duplicateSerial }));
+        toast.warning(t.devices.duplicateSerial);
+      }
+      if (found.type) setType(found.type);
+      if (found.manufacturer) setManufacturer(found.manufacturer);
+      if (found.model) setModel(found.model);
+      if (found.label && !label) setLabel(found.label);
+      if (found.channels) setChannels(String(found.channels));
+      if (found.capacity) setCapacity(found.capacity);
+      if (found.firmware) setFirmware(found.firmware);
+      toast.success(t.devices.autofilledFromDevice);
+      return;
+    }
+
+    setErrors((e) => { const { serial: _drop, ...rest } = e; return rest; });
+
+    // Not a known device — try the shop inventory for a model match.
+    const stock = inventory.find(
+      (i) => (i.model && code.toUpperCase().includes(i.model.toUpperCase())),
+    );
+    if (stock) {
+      if (stock.type) setType(stock.type);
+      if (stock.manufacturer) setManufacturer(stock.manufacturer);
+      if (stock.model) setModel(stock.model);
+      setInventoryItemId(stock.id);
+      toast.success(t.devices.autofilledFromInventory);
     }
   };
 
@@ -146,8 +180,8 @@ export function DeviceFormModal({
       installDate: installDate || undefined,
       warrantyExpiry: warrantyExpiry || undefined,
       health: (health || undefined) as Device['health'],
-      // Only link to stock when the device came from our shop.
-      inventoryItemId: source === 'ours' ? (inventoryItemId || undefined) : undefined,
+      // Equipment the client already owned is never linked to our stock.
+      inventoryItemId: source === 'existing' ? undefined : (inventoryItemId || undefined),
       notes: notes.trim() || undefined,
     };
 
@@ -168,6 +202,7 @@ export function DeviceFormModal({
     <Modal
       open={open}
       title={device ? t.devices.editDevice : t.devices.newDevice}
+      onSubmit={save}
       onClose={onClose}
       size="lg"
       footer={
@@ -200,7 +235,8 @@ export function DeviceFormModal({
           </Field>
         </div>
 
-        {/* Source: ours vs external */}
+        {/* Where the device came from. "Existing" equipment often arrives with
+            unknown details (imported by the client), so nothing is mandatory. */}
         <div style={{
           padding: 13, borderRadius: 'var(--radius)',
           background: 'var(--surface-2)', border: '1px solid var(--border)',
@@ -212,13 +248,22 @@ export function DeviceFormModal({
               <span>🏪 {t.devices.sourceOurs}</span>
             </label>
             <label className="check">
-              <input type="radio" checked={source === 'external'} onChange={() => { setSource('external'); setInventoryItemId(''); }} />
-              <span>🌍 {t.devices.sourceExternal}</span>
+              <input type="radio" checked={source === 'existing'}
+                onChange={() => { setSource('existing'); setInventoryItemId(''); }} />
+              <span>📦 {t.devices.sourceExisting}</span>
+            </label>
+            <label className="check">
+              <input type="radio" checked={source === 'mixed'} onChange={() => setSource('mixed')} />
+              <span>🔀 {t.devices.sourceMixed}</span>
             </label>
           </div>
-          <div className="field-hint mt-8">{t.devices.sourceHint}</div>
+          <div className="field-hint mt-8">
+            {source === 'existing' ? t.devices.sourceExistingHint
+              : source === 'mixed' ? t.devices.sourceMixedHint
+              : t.devices.sourceHint}
+          </div>
 
-          {source === 'ours' && matchingStock.length > 0 && (
+          {source !== 'existing' && matchingStock.length > 0 && (
             <div className="mt-16">
               <Field label={t.devices.fromInventory}>
                 <Select
@@ -231,6 +276,15 @@ export function DeviceFormModal({
                   }))}
                 />
               </Field>
+            </div>
+          )}
+
+          {source === 'existing' && (
+            <div className="mt-8 small" style={{
+              padding: '9px 11px', background: 'var(--info-bg)',
+              borderRadius: 'var(--radius)', lineHeight: 1.6,
+            }}>
+              ℹ️ {t.devices.existingNotice}
             </div>
           )}
         </div>

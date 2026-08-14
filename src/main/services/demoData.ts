@@ -119,10 +119,10 @@ function seedInner(): { clients: number } {
       manufacturer: bi === 1 ? 'TP-Link' : 'Hikvision',
       model: bi === 1 ? 'TL-SG1008P' : 'DS-3E0109P-E',
       serialNumber: `POE${bi}TL${2024}`,
-      source: bi === 1 ? 'external' : 'ours',
+      source: bi === 1 ? 'existing' : 'ours',
       installDate: daysFromNow(-400),
       health: 'good',
-      notes: bi === 1 ? 'الجهاز من مورّد آخر — ليس من المحل' : undefined,
+      notes: bi === 1 ? 'الجهاز كان لدى العميل مسبقاً — ليس من المحل' : undefined,
     });
 
     // A completed maintenance visit for each branch
