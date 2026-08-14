@@ -15,10 +15,11 @@ const sharedDir = path.join(__dirname, '..', 'shared');
 
 /**
  * Packages that stay outside the bundle (pdfmake reads asset files relative to
- * its own location, so it cannot be inlined). They are copied to dist/vendor
- * at build time; this makes `require('pdfmake')` find them there first.
+ * its own location, so it cannot be inlined). npm installs them into
+ * dist/vendor/node_modules at build time; this makes `require('pdfmake')`
+ * resolve there, with npm's own nesting intact.
  */
-const VENDOR_DIR = path.join(__dirname, '..', 'vendor');
+const VENDOR_DIR = path.join(__dirname, '..', 'vendor', 'node_modules');
 
 type ResolveFilename = (
   request: string,
