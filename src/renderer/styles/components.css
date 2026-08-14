@@ -425,8 +425,13 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface-2) 70%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  backdrop-filter: blur(10px) saturate(140%);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  /* NOTE: no backdrop-filter here.
+     backdrop-filter creates a stacking context, which trapped the open
+     dropdown inside the header — it rendered behind page content no matter
+     how high its z-index was. The frosted look now lives on the dropdown
+     itself, which is not an ancestor of anything that must escape. */
+  position: relative;
+  z-index: 950;
 }
 
 .menubar-btn {
@@ -460,7 +465,9 @@
   box-shadow: var(--shadow-lg);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
-  z-index: 900;
+  /* Above page content and sticky table headers, below modals (1000) and
+     toasts (2000) so a dialog still covers the menu. */
+  z-index: 960;
   animation: slideUp 140ms cubic-bezier(.4, 0, .2, 1);
 }
 

@@ -166,10 +166,12 @@ export function Shell({ onLock }: { onLock: () => void }) {
 
       {/* ---- Main column ---- */}
       <div className="col" style={{ flex: 1, minWidth: 0 }}>
+        {/* The header must sit above the scrolling content so an open menu
+            is not covered by the page below it. */}
         <header className="row between" style={{
           height: 62, flexShrink: 0, padding: '0 20px',
           background: 'var(--surface)', borderBottom: '1px solid var(--border)',
-          gap: 14,
+          gap: 14, position: 'relative', zIndex: 940,
         }}>
           <AppMenuBar
             onLock={lock}

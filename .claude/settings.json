@@ -36,7 +36,9 @@
       "Bash(timeout 110 ./node_modules/electron/dist/electron.exe \"C:/Users/A/AppData/Local/Temp/claude/g--projects-AlAqsa/d6ed7227-ce04-43c0-a7d4-f14e33594480/scratchpad/final2.js\")",
       "Bash(timeout 60 ./node_modules/electron/dist/electron.exe \"C:/Users/A/AppData/Local/Temp/claude/g--projects-AlAqsa/d6ed7227-ce04-43c0-a7d4-f14e33594480/scratchpad/pdferr.js\")",
       "Bash(npx electron-builder *)",
-      "Bash(node -e \"console.log\\(require\\('./node_modules/readable-stream/package.json'\\).version\\)\")"
+      "Bash(node -e \"console.log\\(require\\('./node_modules/readable-stream/package.json'\\).version\\)\")",
+      "Bash(sed -n '/\\\\.app-menubar {/,/^}/p' src/renderer/styles/components.css)",
+      "Bash(sed -n '/\\\\.menubar-dropdown {/,/^}/p' src/renderer/styles/components.css)"
     ]
   }
 }
