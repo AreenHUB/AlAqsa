@@ -68,7 +68,7 @@ export interface DashboardStats {
  */
 export interface IpcApi {
   auth: {
-    status(): Promise<AuthStatus>;
+    status(): Promise<Result<AuthStatus>>;
     firstRunSetup(masterPassword: string, language: 'ar' | 'en'): Promise<Result<FirstRunSetupResult>>;
     unlock(password: string): Promise<Result<AuthStatus>>;
     unlockWithRecovery(recoveryKey: string): Promise<Result<AuthStatus>>;
@@ -77,7 +77,7 @@ export interface IpcApi {
     lock(): Promise<Result<null>>;
   };
   license: {
-    state(): Promise<LicenseState>;
+    state(): Promise<Result<LicenseState>>;
     activate(licenseString: string): Promise<Result<LicenseState>>;
   };
   clients: {

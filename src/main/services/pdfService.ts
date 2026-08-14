@@ -37,37 +37,59 @@ function pdfMake(): any {
   return new PdfPrinter(fonts);
 }
 
+/**
+ * Locate the bundled Arabic fonts. Packaged builds ship them under
+ * resources/fonts; unpackaged runs read them from <repo>/assets/fonts.
+ * __dirname is used as the anchor so the lookup does not depend on the
+ * process working directory or on which script started Electron.
+ */
 function fontsDirectory(): string {
-  // Packaged: resources/fonts. Dev: <repo>/assets/fonts.
-  const packaged = path.join(process.resourcesPath ?? '', 'fonts');
-  if (fs.existsSync(packaged)) return packaged;
-  return path.join(app.getAppPath(), 'assets', 'fonts');
+  const candidates = [
+    path.join(process.resourcesPath ?? '', 'fonts'),
+    // dist/main/services -> repo root
+    path.join(__dirname, '..', '..', '..', 'assets', 'fonts'),
+    path.join(app.getAppPath(), 'assets', 'fonts'),
+  ];
+  for (const dir of candidates) {
+    if (dir && fs.existsSync(path.join(dir, 'NotoNaskhArabic-Regular.ttf'))) return dir;
+  }
+  throw new Error('ARABIC_FONTS_NOT_FOUND');
 }
 
 const AR_RANGE = /[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/;
 
 /**
- * Prepare a string for RTL rendering. pdfmake lays glyphs out left-to-right, so
- * Arabic runs are reversed while embedded Latin/number runs keep their order.
+ * Prepare a string for RTL rendering.
+ *
+ * pdfmake places glyphs strictly left-to-right, so an Arabic line must be
+ * reversed at the word level to read correctly. Splitting on the separators
+ * while KEEPING them (capturing group) and reversing the whole token list
+ * preserves the spaces — dropping them was what glued words together.
+ * Latin/digit runs inside the line keep their own internal order.
  */
 export function ar(text: string | number | undefined | null): string {
   if (text === undefined || text === null) return '';
   const s = String(text);
   if (!AR_RANGE.test(s)) return s;
+  // Join with U+00A0: pdfmake collapses/strips runs of plain spaces during
+  // layout, which would glue the reversed words together.
+  const NBSP = ' ';
   return s
     .split('\n')
     .map((line) =>
       line
-        .split(/(\s+)/)
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
         .reverse()
-        .join(''),
+        .join(NBSP),
     )
     .join('\n');
 }
 
-const YES = '✔';
-const NO = '✘';
-const tick = (b: boolean) => (b ? YES : NO);
+// The bundled Arabic font carries no dingbat glyphs (✔/✘ would render as empty
+// boxes), so completion is shown with Arabic words instead.
+const tick = (b: boolean) => (b ? ar('نعم') : '—');
 
 function header(titleAr: string, subtitle?: string) {
   return [

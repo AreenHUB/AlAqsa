@@ -19,7 +19,15 @@
       "Bash(curl -sL -o reg.ttf \"https://raw.githubusercontent.com/google/fonts/main/ofl/notonaskharabic/NotoNaskhArabic%5Bwght%5D.ttf\")",
       "Bash(pip install *)",
       "Bash(curl -sL -o OFL.txt \"https://raw.githubusercontent.com/google/fonts/main/ofl/notonaskharabic/OFL.txt\")",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(timeout 30 ./node_modules/.bin/electron.cmd .)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(rm -rf dist)",
+      "Bash(timeout 25 ./node_modules/.bin/electron.cmd .)",
+      "Bash(timeout 25 ./node_modules/electron/dist/electron.exe .)",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\); console.log\\('package.json valid'\\)\")",
+      "Bash(unset ELECTRON_RUN_AS_NODE)"
     ]
   }
 }

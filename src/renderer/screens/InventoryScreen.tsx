@@ -1,0 +1,292 @@
+// ============================================================================
+// AlAqsa — Shop inventory. Feeds device autocomplete; supports Excel import.
+// ============================================================================
+
+import React, { useCallback, useEffect, useState } from 'react';
+import { useI18n } from '../i18n/I18nContext';
+import {
+  Modal, Field, TextInput, TextArea, Select, Loading, EmptyState,
+  ConfirmDialog, useToast, Badge,
+} from '../components/ui';
+import { DEVICE_TYPES } from '@shared/constants';
+import { isPositiveNumber } from '../utils/validation';
+import type { InventoryItem } from '@shared/types';
+
+export function InventoryScreen() {
+  const { t, lang, fmt } = useI18n();
+  const toast = useToast();
+
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<InventoryItem | null>(null);
+  const [deleting, setDeleting] = useState<InventoryItem | null>(null);
+
+  const load = useCallback(async () => {
+    const res = await window.alaqsa.inventory.list(search || undefined);
+    if (res.ok) setItems(res.data);
+    setLoading(false);
+  }, [search]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => void load(), 200);
+    return () => window.clearTimeout(id);
+  }, [load]);
+
+  const typeLabel = (v: string) => {
+    const d = DEVICE_TYPES.find((x) => x.value === v);
+    return d ? (lang === 'ar' ? d.ar : d.en) : v;
+  };
+
+  const importExcel = async () => {
+    const picked = await window.alaqsa.files.pickOpen([
+      { name: 'Excel', extensions: ['xlsx', 'xls'] },
+    ]);
+    if (!picked.ok || !picked.data) return;
+    const res = await window.alaqsa.inventory.importExcel(picked.data);
+    if (!res.ok) return toast.error(res.error);
+    toast.success(fmt(t.inventory.imported, { n: res.data.imported }));
+    void load();
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    const res = await window.alaqsa.inventory.remove(deleting.id);
+    setDeleting(null);
+    if (res.ok) { toast.success(t.msg.deleted); void load(); }
+    else toast.error(res.error);
+  };
+
+  const shown = typeFilter ? items.filter((i) => i.type === typeFilter) : items;
+  const totalValue = shown.reduce((sum, i) => sum + (i.unitPrice ?? 0) * (i.quantity ?? 0), 0);
+
+  if (loading) return <Loading />;
+
+  return (
+    <div className="col gap-16 fade-in">
+      <div className="row between wrap gap-12">
+        <div>
+          <h1 style={{ fontSize: 22 }}>{t.inventory.title}</h1>
+          <p className="muted small">{t.inventory.subtitle}</p>
+        </div>
+        <div className="row gap-8">
+          <button className="btn btn-outline" onClick={importExcel}>📥 {t.inventory.importExcel}</button>
+          <button className="btn btn-primary" onClick={() => { setEditing(null); setFormOpen(true); }}>
+            + {t.inventory.newItem}
+          </button>
+        </div>
+      </div>
+
+      <div className="stat-grid">
+        <div className="stat">
+          <div className="stat-label">{t.inventory.title}</div>
+          <div className="stat-value">{shown.length}</div>
+        </div>
+        <div className="stat">
+          <div className="stat-label">{t.inventory.quantity}</div>
+          <div className="stat-value">{shown.reduce((s, i) => s + (i.quantity ?? 0), 0)}</div>
+        </div>
+        <div className="stat accent-success">
+          <div className="stat-label">{t.common.total}</div>
+          <div className="stat-value">{totalValue.toLocaleString()}</div>
+          <div className="stat-sub">AED</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-body row gap-10 wrap" style={{ padding: 14 }}>
+          <input
+            className="input"
+            style={{ flex: '2 1 240px' }}
+            placeholder={`🔍 ${t.common.search}...`}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <div style={{ flex: '1 1 160px' }}>
+            <Select
+              value={typeFilter}
+              onChange={setTypeFilter}
+              placeholder={t.common.type}
+              options={DEVICE_TYPES.map((d) => ({ value: d.value, label: lang === 'ar' ? d.ar : d.en }))}
+            />
+          </div>
+          <div className="small muted" style={{ marginInlineStart: 'auto', maxWidth: 380 }}>
+            ℹ️ {t.inventory.importHint}
+          </div>
+        </div>
+      </div>
+
+      {shown.length === 0 ? (
+        <EmptyState icon="📦" title={t.inventory.noItems}
+          action={
+            <div className="row gap-8">
+              <button className="btn btn-primary" onClick={() => { setEditing(null); setFormOpen(true); }}>
+                + {t.inventory.newItem}
+              </button>
+              <button className="btn btn-outline" onClick={importExcel}>📥 {t.inventory.importExcel}</button>
+            </div>
+          } />
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>{t.common.type}</th>
+                <th>{t.devices.manufacturer}</th>
+                <th>{t.devices.model}</th>
+                <th>{t.inventory.description}</th>
+                <th>{t.inventory.quantity}</th>
+                <th>{t.inventory.unitPrice}</th>
+                <th>{t.common.total}</th>
+                <th style={{ width: 80 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((i) => (
+                <tr key={i.id}>
+                  <td><Badge kind="info">{typeLabel(i.type)}</Badge></td>
+                  <td className="small">{i.manufacturer ?? '—'}</td>
+                  <td className="small bold mono" dir="ltr">{i.model ?? '—'}</td>
+                  <td className="small">{i.description ?? '—'}</td>
+                  <td className="small">
+                    <Badge kind={(i.quantity ?? 0) > 0 ? 'success' : 'danger'}>{i.quantity ?? 0}</Badge>
+                  </td>
+                  <td className="small">{i.unitPrice?.toLocaleString() ?? '—'}</td>
+                  <td className="small bold">
+                    {((i.unitPrice ?? 0) * (i.quantity ?? 0)).toLocaleString()}
+                  </td>
+                  <td>
+                    <div className="cell-actions">
+                      <button className="btn btn-ghost btn-icon btn-sm"
+                        onClick={() => { setEditing(i); setFormOpen(true); }}>✏️</button>
+                      <button className="btn btn-ghost btn-icon btn-sm"
+                        onClick={() => setDeleting(i)}>🗑</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <InventoryFormModal
+        open={formOpen}
+        item={editing}
+        onClose={() => setFormOpen(false)}
+        onSaved={() => { setFormOpen(false); void load(); }}
+      />
+
+      <ConfirmDialog
+        open={!!deleting}
+        title={t.msg.confirmDelete}
+        message={t.documents.deleteConfirm}
+        danger
+        confirmLabel={t.common.delete}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleting(null)}
+      />
+    </div>
+  );
+}
+
+function InventoryFormModal({
+  open, item, onClose, onSaved,
+}: {
+  open: boolean;
+  item: InventoryItem | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { t, lang } = useI18n();
+  const toast = useToast();
+
+  const [type, setType] = useState('camera');
+  const [manufacturer, setManufacturer] = useState('');
+  const [model, setModel] = useState('');
+  const [description, setDescription] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [unitPrice, setUnitPrice] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setType(item?.type ?? 'camera');
+    setManufacturer(item?.manufacturer ?? '');
+    setModel(item?.model ?? '');
+    setDescription(item?.description ?? '');
+    setQuantity(item?.quantity?.toString() ?? '');
+    setUnitPrice(item?.unitPrice?.toString() ?? '');
+    setErrors({});
+  }, [open, item]);
+
+  const save = async () => {
+    const e: Record<string, string> = {};
+    if (!model.trim() && !manufacturer.trim()) e.model = t.validation.required;
+    if (quantity && !isPositiveNumber(quantity)) e.quantity = t.validation.positiveNumber;
+    if (unitPrice && !isPositiveNumber(unitPrice)) e.unitPrice = t.validation.positiveNumber;
+    setErrors(e);
+    if (Object.keys(e).length) return;
+
+    setBusy(true);
+    const res = await window.alaqsa.inventory.upsert({
+      id: item?.id,
+      type: type as InventoryItem['type'],
+      manufacturer: manufacturer.trim() || undefined,
+      model: model.trim() || undefined,
+      description: description.trim() || undefined,
+      quantity: quantity ? Number(quantity) : undefined,
+      unitPrice: unitPrice ? Number(unitPrice) : undefined,
+    });
+    setBusy(false);
+    if (!res.ok) return toast.error(res.error);
+    toast.success(item ? t.msg.updated : t.msg.created);
+    onSaved();
+  };
+
+  return (
+    <Modal
+      open={open}
+      title={item ? t.inventory.editItem : t.inventory.newItem}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn btn-outline" onClick={onClose}>{t.common.cancel}</button>
+          <button className="btn btn-primary" onClick={save} disabled={busy}>
+            {busy ? <span className="spinner" /> : t.common.save}
+          </button>
+        </>
+      }
+    >
+      <div className="form-grid">
+        <Field label={t.common.type} required>
+          <Select
+            value={type}
+            onChange={setType}
+            options={DEVICE_TYPES.map((d) => ({ value: d.value, label: lang === 'ar' ? d.ar : d.en }))}
+          />
+        </Field>
+        <Field label={t.devices.manufacturer}>
+          <TextInput value={manufacturer} onChange={setManufacturer} />
+        </Field>
+        <Field label={t.devices.model} required error={errors.model}>
+          <TextInput value={model} onChange={setModel} error={!!errors.model} dir="ltr" />
+        </Field>
+        <Field label={t.inventory.description}>
+          <TextInput value={description} onChange={setDescription} />
+        </Field>
+        <Field label={t.inventory.quantity} error={errors.quantity}>
+          <TextInput value={quantity} onChange={setQuantity} type="number" min={0}
+            error={!!errors.quantity} dir="ltr" />
+        </Field>
+        <Field label={`${t.inventory.unitPrice} (AED)`} error={errors.unitPrice}>
+          <TextInput value={unitPrice} onChange={setUnitPrice} type="number" min={0} step="0.01"
+            error={!!errors.unitPrice} dir="ltr" />
+        </Field>
+      </div>
+    </Modal>
+  );
+}

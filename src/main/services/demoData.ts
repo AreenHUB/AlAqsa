@@ -19,6 +19,12 @@ function daysFromNow(n: number): string {
 
 export function seedDemoData(): { clients: number } {
   const db = getDb();
+  // All-or-nothing: a partial seed would leave confusing half-records behind.
+  return db.transaction(() => seedInner())();
+}
+
+function seedInner(): { clients: number } {
+  const db = getDb();
   const existing = (db.prepare('SELECT count(*) AS c FROM clients').get() as { c: number }).c;
   if (existing > 0) return { clients: 0 }; // never duplicate
 

@@ -22,12 +22,20 @@ interface SecureFile {
 export class SecureStore {
   private dek: Buffer | null = null;
   private file: SecureFile | null = null;
+  private loaded = false;
 
-  constructor() {
+  /**
+   * Read the secure file lazily. Electron's `app.getPath` is only available
+   * once the app is ready, so we must not touch it during module import.
+   */
+  private ensureLoaded(): void {
+    if (this.loaded) return;
     this.file = readJson<SecureFile | null>(secureStorePath(), null);
+    this.loaded = true;
   }
 
   isInitialized(): boolean {
+    this.ensureLoaded();
     return !!this.file && fs.existsSync(secureStorePath());
   }
 
@@ -37,6 +45,7 @@ export class SecureStore {
 
   /** First-run: create a fresh DEK, wrap it with password + a new recovery key. */
   firstRunSetup(masterPassword: string): { recoveryKey: string } {
+    this.ensureLoaded();
     if (this.isInitialized()) throw new Error('ALREADY_INITIALIZED');
     const dek = randomBytes(32);
     const recoveryKey = generateRecoveryKey();
@@ -54,6 +63,7 @@ export class SecureStore {
   }
 
   unlockWithPassword(password: string): boolean {
+    this.ensureLoaded();
     if (!this.file) throw new Error('NOT_INITIALIZED');
     try {
       this.dek = unwrapDek(this.file.passwordWrap, password);
@@ -64,6 +74,7 @@ export class SecureStore {
   }
 
   unlockWithRecovery(recoveryKey: string): boolean {
+    this.ensureLoaded();
     if (!this.file) throw new Error('NOT_INITIALIZED');
     try {
       this.dek = unwrapDek(this.file.recoveryWrap, normalizeRecoveryKey(recoveryKey));
@@ -75,6 +86,7 @@ export class SecureStore {
 
   /** Change the master password. Requires an unlocked DEK. */
   changePassword(oldPassword: string, newPassword: string): boolean {
+    this.ensureLoaded();
     if (!this.file) throw new Error('NOT_INITIALIZED');
     // Verify old password by unwrapping.
     let dek: Buffer;
@@ -94,6 +106,7 @@ export class SecureStore {
    * and fingerprint. Requires the current password to authorize.
    */
   regenerateRecoveryKey(password: string): { recoveryKey: string } | null {
+    this.ensureLoaded();
     if (!this.file) throw new Error('NOT_INITIALIZED');
     let dek: Buffer;
     try {

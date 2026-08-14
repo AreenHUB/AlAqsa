@@ -2,6 +2,9 @@
 // AlAqsa — Electron main process entry point.
 // ============================================================================
 
+// Must come first: teaches Node how to resolve the "@shared/*" alias at runtime.
+import './aliasRegister';
+
 import { app, BrowserWindow, shell, Menu, nativeTheme } from 'electron';
 import path from 'node:path';
 import { SecureStore } from './security/secureStore';
@@ -64,7 +67,9 @@ if (!gotLock) {
   });
 }
 
-const isDev = !app.isPackaged;
+// Dev mode is opt-in via ALAQSA_DEV=1 so that running the unpackaged build
+// (npm start) loads the compiled renderer instead of expecting a Vite server.
+const isDev = process.env.ALAQSA_DEV === '1';
 
 function createWindow(): void {
   const config = loadConfig();

@@ -18,9 +18,11 @@ function Root() {
   const [booted, setBooted] = useState(false);
 
   const refresh = useCallback(async () => {
-    const s = await window.alaqsa.auth.status();
-    setStatus(s);
-    if (s.language !== lang) setLang(s.language);
+    const res = await window.alaqsa.auth.status();
+    if (res.ok) {
+      setStatus(res.data);
+      if (res.data.language !== lang) setLang(res.data.language);
+    }
     setBooted(true);
   }, [lang, setLang]);
 
@@ -64,7 +66,9 @@ export function App() {
   const [initialLang, setInitialLang] = useState<Lang | null>(null);
 
   useEffect(() => {
-    void window.alaqsa.auth.status().then((s) => setInitialLang(s.language ?? 'ar'));
+    void window.alaqsa.auth.status().then((res) => {
+      setInitialLang(res.ok ? (res.data.language ?? 'ar') : 'ar');
+    });
   }, []);
 
   if (!initialLang) {

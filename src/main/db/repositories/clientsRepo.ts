@@ -112,8 +112,9 @@ export const clientsRepo = {
       db.prepare('DELETE FROM contacts WHERE client_id = ?').run(clientId);
       const ins = db.prepare(`INSERT INTO contacts (id, client_id, name, role, phones, emails, is_primary, sort)
         VALUES (?,?,?,?,?,?,?,?)`);
+      // Callers may send blank ids for new rows — always mint one then.
       contacts.forEach((c, i) => ins.run(
-        c.id ?? uuid(), clientId, c.name, c.role ?? null,
+        c.id || uuid(), clientId, c.name, c.role ?? null,
         JSON.stringify(c.phones ?? []), JSON.stringify(c.emails ?? []),
         fromBool(c.isPrimary), c.order ?? i,
       ));
