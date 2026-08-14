@@ -44,6 +44,22 @@ export async function shareViaWhatsApp(pdfPath: string, phone: string, message: 
   }
 }
 
+/**
+ * Share plain text (a location, a note, a heads-up to the team). No file is
+ * involved, so this opens straight into the chat with the message ready.
+ */
+export async function shareTextViaWhatsApp(phone: string, message: string): Promise<void> {
+  const digits = normalizePhone(phone);
+  const text = encodeURIComponent(message);
+  const deepLink = `whatsapp://send?phone=${digits}&text=${text}`;
+  const webLink = `https://wa.me/${digits}?text=${text}`;
+  try {
+    await shell.openExternal(deepLink);
+  } catch {
+    await shell.openExternal(webLink);
+  }
+}
+
 /** Send the default printer the file via the Windows shell "print" verb. */
 export async function printFile(filePath: string): Promise<void> {
   if (!fs.existsSync(filePath)) throw new Error('FILE_NOT_FOUND');

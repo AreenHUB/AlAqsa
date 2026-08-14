@@ -17,6 +17,8 @@ const EMPTY_CHECKLIST: MaintenanceChecklist = {
 interface VisitRow {
   id: string; client_id: string; branch_id: string; type: string;
   visit_date: string; next_visit_date: string | null; technician: string | null;
+  technician_id: string | null; amc_contract_id: string | null;
+  counts_against_amc: number;
   checklist: string; camera_checks: string; replaced_parts: string;
   faults_found: string | null; actions_taken: string | null; recommendations: string | null;
   signature_tech_media_id: string | null; signature_client_media_id: string | null;
@@ -43,6 +45,9 @@ function mapVisit(r: VisitRow): Visit {
     id: r.id, clientId: r.client_id, branchId: r.branch_id,
     type: r.type as Visit['type'], visitDate: r.visit_date,
     nextVisitDate: r.next_visit_date ?? undefined, technician: r.technician ?? undefined,
+    technicianId: r.technician_id ?? undefined,
+    amcContractId: r.amc_contract_id ?? undefined,
+    countsAgainstAmc: r.counts_against_amc !== 0,
     checklist: { ...EMPTY_CHECKLIST, ...parseJson<Partial<MaintenanceChecklist>>(r.checklist, {}) },
     cameraChecks: parseJson<CameraCheck[]>(r.camera_checks, []),
     replacedParts: parseJson<ReplacedPart[]>(r.replaced_parts, []),
@@ -77,11 +82,13 @@ export const visitsRepo = {
     const id = input.id ?? uuid();
     const ts = now();
     db.prepare(`INSERT INTO visits
-      (id, client_id, branch_id, type, visit_date, next_visit_date, technician, checklist,
+      (id, client_id, branch_id, type, visit_date, next_visit_date, technician,
+       technician_id, amc_contract_id, counts_against_amc, checklist,
        camera_checks, replaced_parts, faults_found, actions_taken, recommendations,
        signature_tech_media_id, signature_client_media_id, photos_before, photos_after,
        created_at, updated_at)
-      VALUES (@id,@client_id,@branch_id,@type,@visit_date,@next_visit_date,@technician,@checklist,
+      VALUES (@id,@client_id,@branch_id,@type,@visit_date,@next_visit_date,@technician,
+       @technician_id,@amc_contract_id,@counts_against_amc,@checklist,
        @camera_checks,@replaced_parts,@faults_found,@actions_taken,@recommendations,
        @sig_tech,@sig_client,@photos_before,@photos_after,@created_at,@updated_at)`)
       .run({
@@ -89,6 +96,9 @@ export const visitsRepo = {
         type: input.type ?? 'maintenance',
         visit_date: input.visitDate ?? ts.slice(0, 10),
         next_visit_date: input.nextVisitDate ?? null, technician: input.technician ?? null,
+        technician_id: input.technicianId ?? null,
+        amc_contract_id: input.amcContractId ?? null,
+        counts_against_amc: input.countsAgainstAmc === false ? 0 : 1,
         checklist: JSON.stringify({ ...EMPTY_CHECKLIST, ...(input.checklist ?? {}) }),
         camera_checks: JSON.stringify(input.cameraChecks ?? []),
         replaced_parts: JSON.stringify(input.replacedParts ?? []),
@@ -112,6 +122,8 @@ export const visitsRepo = {
     const m = { ...existing, ...patch, updatedAt: now() };
     getDb().prepare(`UPDATE visits SET
       type=@type, visit_date=@visit_date, next_visit_date=@next_visit_date, technician=@technician,
+      technician_id=@technician_id, amc_contract_id=@amc_contract_id,
+      counts_against_amc=@counts_against_amc,
       checklist=@checklist, camera_checks=@camera_checks, replaced_parts=@replaced_parts,
       faults_found=@faults_found, actions_taken=@actions_taken, recommendations=@recommendations,
       signature_tech_media_id=@sig_tech, signature_client_media_id=@sig_client,
@@ -119,7 +131,11 @@ export const visitsRepo = {
       WHERE id=@id`)
       .run({
         id, type: m.type, visit_date: m.visitDate, next_visit_date: m.nextVisitDate ?? null,
-        technician: m.technician ?? null, checklist: JSON.stringify(m.checklist),
+        technician: m.technician ?? null,
+        technician_id: m.technicianId ?? null,
+        amc_contract_id: m.amcContractId ?? null,
+        counts_against_amc: m.countsAgainstAmc === false ? 0 : 1,
+        checklist: JSON.stringify(m.checklist),
         camera_checks: JSON.stringify(m.cameraChecks), replaced_parts: JSON.stringify(m.replacedParts),
         faults_found: m.faultsFound ?? null, actions_taken: m.actionsTaken ?? null,
         recommendations: m.recommendations ?? null,

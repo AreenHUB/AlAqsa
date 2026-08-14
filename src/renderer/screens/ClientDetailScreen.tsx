@@ -15,6 +15,7 @@ import { VisitFormModal } from '../components/VisitFormModal';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { LicensesPanel } from '../components/LicensesPanel';
 import { FinancePanel } from '../components/FinancePanel';
+import { NotesPanel } from '../components/NotesPanel';
 import { DeviceQrModal } from '../components/DeviceQrModal';
 import { ShareReportModal } from '../components/ShareReportModal';
 import type { Route } from '../Shell';
@@ -123,6 +124,7 @@ export function ClientDetailScreen({
     { id: 'documents', label: t.clients.tabs.documents },
     { id: 'licenses', label: t.clients.tabs.licenses },
     { id: 'finance', label: t.clients.tabs.finance },
+    { id: 'notes', label: t.notesLog.title },
   ];
 
   const deviceTypeLabel = (v: string) => {
@@ -516,6 +518,9 @@ export function ClientDetailScreen({
       {tab === 'documents' && <DocumentsPanel clientId={clientId} branches={branches} onChanged={load} />}
       {tab === 'licenses' && <LicensesPanel clientId={clientId} branches={branches} onChanged={load} />}
       {tab === 'finance' && <FinancePanel clientId={clientId} />}
+      {tab === 'notes' && (
+        <NotesPanel clientId={clientId} clientName={client.nameAr} branches={branches} />
+      )}
 
       {/* ---- Modals ---- */}
       <ClientFormModal

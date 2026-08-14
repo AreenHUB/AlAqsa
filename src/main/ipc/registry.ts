@@ -25,9 +25,11 @@ import { importFile, materializeToTemp, dataUrlToBuffer, writeEncrypted, deleteS
 import { dataDir, filesDir, backupsDir, reportsDir, secureStorePath, dbPath } from '../storage/paths';
 import { APP_NAME, APP_VERSION, AUTHOR } from '@shared/constants';
 import { seedDemoData } from '../services/demoData';
-import { generateVisitPdf, generateAgreementPdf } from '../services/pdfService';
+import { staffRepo, notesRepo } from '../db/repositories/staffRepo';
+import { assertAllowed, setCurrentUser, getCurrentRole } from '../security/permissions';
+import { generateVisitPdf, generateAgreementPdf, generateInvoicePdf } from '../services/pdfService';
 import { exportClientExcel, exportAllExcel, importInventoryExcel } from '../services/excelService';
-import { shareViaWhatsApp, printFile } from '../services/shareService';
+import { shareViaWhatsApp, shareTextViaWhatsApp, printFile } from '../services/shareService';
 import { deviceQrDataUrl } from '../services/qrService';
 import { networkService } from '../services/networkService';
 
@@ -37,10 +39,23 @@ const err = (e: unknown): Result<never> => ({
   error: e instanceof Error ? e.message : String(e),
 });
 
-/** Wrap a handler with uniform error handling. */
+/**
+ * Wrap a handler with uniform error handling and a role check.
+ *
+ * The permission check happens here rather than in the renderer: hiding a
+ * button is only cosmetic, so this boundary is the authoritative one.
+ * Auth/licence channels opt out because they must work before a role exists.
+ */
+const UNGATED = new Set([
+  'auth:status', 'auth:unlock', 'auth:unlockWithRecovery',
+  'auth:firstRunSetup', 'auth:lock', 'license:state', 'app:about',
+  'settings:setLanguage', 'settings:setTheme', 'network:getMode',
+]);
+
 function handle<T>(channel: string, fn: (...args: any[]) => T | Promise<T>): void {
   ipcMain.handle(channel, async (_event, ...args) => {
     try {
+      if (!UNGATED.has(channel)) assertAllowed(channel);
       return ok(await fn(...args));
     } catch (e) {
       return err(e);
@@ -357,6 +372,12 @@ export function registerIpcHandlers(ctx: AppContext): void {
     auditRepo.log('export', 'agreement', clientId, p);
     return { path: p };
   });
+  handle('reports:invoicePdf', async (invoiceId: string) => {
+    requireUnlocked(ctx);
+    const p = await generateInvoicePdf(invoiceId);
+    auditRepo.log('export', 'invoice', invoiceId, p);
+    return { path: p };
+  });
   handle('reports:exportClientExcel', async (clientId: string) => {
     requireUnlocked(ctx);
     const p = await exportClientExcel(clientId);
@@ -377,6 +398,83 @@ export function registerIpcHandlers(ctx: AppContext): void {
   handle('reports:print', async (pdfPath: string) => {
     requireUnlocked(ctx);
     await printFile(pdfPath);
+    return null;
+  });
+
+  // ---- staff directory ---------------------------------------------------
+  handle('staff:list', (includeInactive?: boolean) => {
+    requireUnlocked(ctx); return staffRepo.list(!!includeInactive);
+  });
+  handle('staff:save', (input) => {
+    requireUnlocked(ctx);
+    const s = staffRepo.save(input);
+    auditRepo.log('save', 'staff', s.id, s.name);
+    return s;
+  });
+  handle('staff:remove', (id: string) => {
+    requireUnlocked(ctx); staffRepo.remove(id);
+    auditRepo.log('delete', 'staff', id);
+    return null;
+  });
+  handle('staff:activity', (fromDate?: string, toDate?: string) => {
+    requireUnlocked(ctx); return staffRepo.activity(fromDate, toDate);
+  });
+
+  // ---- note entries ------------------------------------------------------
+  handle('notes:listByClient', (clientId: string) => {
+    requireUnlocked(ctx); return notesRepo.listByClient(clientId);
+  });
+  handle('notes:listByBranch', (branchId: string) => {
+    requireUnlocked(ctx); return notesRepo.listByBranch(branchId);
+  });
+  handle('notes:save', (input) => {
+    requireUnlocked(ctx);
+    const n = notesRepo.save(input);
+    auditRepo.log('save', 'note', n.id);
+    notifyDataChanged(ctx, 'notes');
+    return n;
+  });
+  handle('notes:remove', (id: string) => {
+    requireUnlocked(ctx); notesRepo.remove(id);
+    notifyDataChanged(ctx, 'notes');
+    return null;
+  });
+
+  // ---- quick sharing -----------------------------------------------------
+  handle('share:whatsAppText', async (phone: string, message: string) => {
+    requireUnlocked(ctx);
+    await shareTextViaWhatsApp(phone, message);
+    return null;
+  });
+
+  handle('share:branchLocation', async (branchId: string, phone: string) => {
+    requireUnlocked(ctx);
+    const branch = branchesRepo.get(branchId);
+    if (!branch) throw new Error('NOT_FOUND');
+    const client = clientsRepo.get(branch.clientId);
+
+    // Prefer exact coordinates; fall back to a search link on the address.
+    const loc = branch.location;
+    const mapLink = loc.lat != null && loc.lng != null
+      ? `https://maps.google.com/?q=${loc.lat},${loc.lng}`
+      : loc.mapUrl
+        ? loc.mapUrl
+        : loc.address
+          ? `https://maps.google.com/?q=${encodeURIComponent(loc.address)}`
+          : '';
+
+    if (!mapLink) throw new Error('NO_LOCATION');
+
+    const lines = [
+      `📍 ${client?.nameAr ?? ''} — ${branch.nameAr}`,
+      loc.address ? `العنوان: ${loc.address}` : '',
+      branch.managerContact ? `مسؤول الفرع: ${branch.managerContact}` : '',
+      '',
+      mapLink,
+    ].filter(Boolean);
+
+    await shareTextViaWhatsApp(phone, lines.join('\n'));
+    auditRepo.log('share', 'branch_location', branchId, branch.nameAr);
     return null;
   });
 
@@ -573,9 +671,20 @@ export function registerIpcHandlers(ctx: AppContext): void {
 
   handle('app:seedDemoData', () => {
     requireUnlocked(ctx);
+    // Guard in the main process too: once the shop has real records, sample
+    // data must never be injectable, however the call was triggered.
+    const existing = (getDb().prepare('SELECT count(*) AS c FROM clients').get() as { c: number }).c;
+    if (existing > 0) throw new Error('DATA_EXISTS');
     const res = seedDemoData();
     auditRepo.log('seed', 'demo_data', undefined, `${res.clients} clients`);
     notifyDataChanged(ctx, 'all');
     return res;
+  });
+
+  /** Lets the UI hide the demo button (and show the current role) sensibly. */
+  handle('app:state', () => {
+    requireUnlocked(ctx);
+    const clients = (getDb().prepare('SELECT count(*) AS c FROM clients').get() as { c: number }).c;
+    return { isEmpty: clients === 0, role: getCurrentRole() };
   });
 }

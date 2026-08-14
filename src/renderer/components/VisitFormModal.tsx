@@ -6,13 +6,17 @@
 // captured by drawing on a canvas.
 // ============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import { Modal, Field, TextInput, TextArea, Select, Checkbox, useToast, Badge } from './ui';
 import { SignaturePad } from './SignaturePad';
+import { TechnicianPicker } from './TechnicianPicker';
 import { VISIT_TYPES } from '@shared/constants';
 import { todayISO, addDays } from '../utils/validation';
-import type { Visit, Branch, Device, MaintenanceChecklist, CameraCheck, ReplacedPart, MediaRef } from '@shared/types';
+import type {
+  Visit, Branch, Device, MaintenanceChecklist, CameraCheck, ReplacedPart,
+  MediaRef, StaffMember, AmcContract,
+} from '@shared/types';
 
 const CHECKLIST_KEYS: (keyof MaintenanceChecklist)[] = [
   'cleanCameras', 'cleanNvr', 'checkNetworkCables', 'checkPowerSupply',
@@ -45,6 +49,11 @@ export function VisitFormModal({
   const [visitDate, setVisitDate] = useState(todayISO());
   const [nextVisitDate, setNextVisitDate] = useState('');
   const [technician, setTechnician] = useState('');
+  const [technicianId, setTechnicianId] = useState<string | undefined>();
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [contracts, setContracts] = useState<AmcContract[]>([]);
+  const [amcContractId, setAmcContractId] = useState('');
+  const [countsAgainstAmc, setCountsAgainstAmc] = useState(true);
   const [checklist, setChecklist] = useState<MaintenanceChecklist>(EMPTY_CHECKLIST);
   const [cameraChecks, setCameraChecks] = useState<CameraCheck[]>([]);
   const [parts, setParts] = useState<ReplacedPart[]>([]);
@@ -58,14 +67,29 @@ export function VisitFormModal({
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<'info' | 'checklist' | 'cameras' | 'parts' | 'report'>('info');
 
+  const loadStaff = useCallback(async () => {
+    const s = await window.alaqsa.staff.list();
+    if (s.ok) setStaff(s.data);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
+    void loadStaff();
+    // AMC contracts are only readable by roles allowed to see money; a refusal
+    // here simply means no contract picker is offered.
+    void window.alaqsa.amc.listByClient(clientId).then((r) => {
+      setContracts(r.ok ? r.data : []);
+    });
+
     if (visit) {
       setBranchId(visit.branchId);
       setType(visit.type);
       setVisitDate(visit.visitDate.slice(0, 10));
       setNextVisitDate(visit.nextVisitDate?.slice(0, 10) ?? '');
       setTechnician(visit.technician ?? '');
+      setTechnicianId(visit.technicianId);
+      setAmcContractId(visit.amcContractId ?? '');
+      setCountsAgainstAmc(visit.countsAgainstAmc !== false);
       setChecklist({ ...EMPTY_CHECKLIST, ...visit.checklist });
       setCameraChecks(visit.cameraChecks);
       setParts(visit.replacedParts);
@@ -81,6 +105,9 @@ export function VisitFormModal({
       setVisitDate(todayISO());
       setNextVisitDate(addDays(todayISO(), 90));
       setTechnician('');
+      setTechnicianId(undefined);
+      setAmcContractId('');
+      setCountsAgainstAmc(true);
       setChecklist(EMPTY_CHECKLIST);
       setCameraChecks([]);
       setParts([]);
@@ -140,6 +167,9 @@ export function VisitFormModal({
       type: type as Visit['type'],
       visitDate, nextVisitDate: nextVisitDate || undefined,
       technician: technician.trim() || undefined,
+      technicianId,
+      amcContractId: amcContractId || undefined,
+      countsAgainstAmc: amcContractId ? countsAgainstAmc : false,
       checklist,
       cameraChecks,
       replacedParts: parts.filter((p) => p.description.trim()),
@@ -238,12 +268,49 @@ export function VisitFormModal({
               <TextInput value={visitDate} onChange={setVisitDate} type="date" error={!!errors.visitDate} />
             </Field>
             <Field label={t.visits.technician}>
-              <TextInput value={technician} onChange={setTechnician} />
+              <TechnicianPicker
+                value={technician}
+                staffId={technicianId}
+                staff={staff}
+                onChange={(name, id) => { setTechnician(name); setTechnicianId(id); }}
+                onStaffAdded={loadStaff}
+              />
             </Field>
             <Field label={t.visits.nextVisitDate} error={errors.nextVisitDate}>
               <TextInput value={nextVisitDate} onChange={setNextVisitDate} type="date"
                 error={!!errors.nextVisitDate} />
             </Field>
+
+            {/* Maintenance contract. Linking here is what decrements the
+                contract's remaining visits — the counter is never typed. */}
+            {contracts.length > 0 && (
+              <>
+                <Field label={t.finance.amc} className="span-2">
+                  <Select
+                    value={amcContractId}
+                    onChange={setAmcContractId}
+                    placeholder={t.visits.noContract}
+                    options={contracts.map((c) => ({
+                      value: c.id,
+                      label: c.unlimitedVisits
+                        ? `${c.startDate} → ${c.endDate} · ${t.finance.unlimited}`
+                        : `${c.startDate} → ${c.endDate} · ${c.totalVisits - c.usedVisits}/${c.totalVisits}`,
+                    }))}
+                  />
+                </Field>
+                {amcContractId && (
+                  <div className="span-all">
+                    <Checkbox
+                      checked={countsAgainstAmc}
+                      onChange={setCountsAgainstAmc}
+                      label={t.visits.countsAgainstAmc}
+                    />
+                    <div className="field-hint">{t.visits.countsHint}</div>
+                  </div>
+                )}
+              </>
+            )}
+
             <div className="span-all">
               <Checkbox checked={makeReminder} onChange={setMakeReminder}
                 label={`🔔 ${t.visits.addReminder}`} />

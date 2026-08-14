@@ -9,6 +9,7 @@ import {
   Modal, Field, TextInput, Select, Tabs, Loading, Badge,
   ConfirmDialog, useToast, EmptyState, fmtDate,
 } from '../components/ui';
+import { StaffTab } from '../components/StaffTab';
 import type { StatusLabel, AppUser, AuditEntry } from '@shared/types';
 
 export function SettingsScreen({ onLock }: { onLock: () => void }) {
@@ -20,6 +21,7 @@ export function SettingsScreen({ onLock }: { onLock: () => void }) {
     { id: 'general', label: t.settings.general },
     { id: 'security', label: t.settings.security },
     { id: 'labels', label: t.settings.statusLabels },
+    { id: 'staff', label: t.staff.title },
     { id: 'network', label: t.settings.network },
     { id: 'data', label: t.settings.dataManagement },
     { id: 'users', label: t.settings.users },
@@ -36,6 +38,7 @@ export function SettingsScreen({ onLock }: { onLock: () => void }) {
       {tab === 'general' && <GeneralTab />}
       {tab === 'security' && <SecurityTab onLock={onLock} />}
       {tab === 'labels' && <LabelsTab />}
+      {tab === 'staff' && <StaffTab />}
       {tab === 'network' && <NetworkTab />}
       {tab === 'data' && <DataTab />}
       {tab === 'users' && <UsersTab />}
@@ -463,6 +466,16 @@ function DataTab() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetPassword, setResetPassword] = useState('');
   const [resetError, setResetError] = useState('');
+  // Sample data is only meaningful on a brand-new install; once the shop has
+  // real records the option is hidden (and refused by the main process).
+  const [isEmpty, setIsEmpty] = useState(false);
+
+  const refreshState = useCallback(async () => {
+    const res = await window.alaqsa.app.state();
+    if (res.ok) setIsEmpty(res.data.isEmpty);
+  }, []);
+
+  useEffect(() => { void refreshState(); }, [refreshState]);
 
   const backupNow = async () => {
     setBusy('backup');
@@ -496,6 +509,7 @@ function DataTab() {
     setBusy('');
     if (!res.ok) return toast.error(res.error);
     toast.success(res.data.clients > 0 ? t.settings.seedDone : t.settings.seedSkipped);
+    void refreshState();
   };
 
   const factoryReset = async () => {
@@ -510,6 +524,7 @@ function DataTab() {
     setResetOpen(false);
     setResetPassword('');
     toast.success(t.settings.factoryResetDone);
+    void refreshState();
   };
 
   return (
@@ -531,15 +546,17 @@ function DataTab() {
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-head"><span className="card-title">🧪 {t.settings.seedDemo}</span></div>
-          <div className="card-body col gap-8">
-            <p className="small muted">{t.settings.seedDemoHint}</p>
-            <button className="btn btn-outline" onClick={seedDemo} disabled={!!busy}>
-              {busy === 'seed' ? <span className="spinner" /> : `+ ${t.settings.seedDemo}`}
-            </button>
+        {isEmpty && (
+          <div className="card">
+            <div className="card-head"><span className="card-title">🧪 {t.settings.seedDemo}</span></div>
+            <div className="card-body col gap-8">
+              <p className="small muted">{t.settings.seedDemoHint}</p>
+              <button className="btn btn-outline" onClick={seedDemo} disabled={!!busy}>
+                {busy === 'seed' ? <span className="spinner" /> : `+ ${t.settings.seedDemo}`}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="card" style={{ borderColor: 'var(--danger)' }}>
           <div className="card-head" style={{ background: 'var(--danger-bg)' }}>

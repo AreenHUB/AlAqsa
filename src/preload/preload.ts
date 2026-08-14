@@ -20,7 +20,10 @@ const API_MAP: Record<string, string[]> = {
   invoices: ['listByClient', 'save', 'remove'],
   reminders: ['upcoming', 'all', 'save', 'markDone', 'remove'],
   statusLabels: ['list', 'save', 'remove'],
-  reports: ['visitPdf', 'agreementPdf', 'exportClientExcel', 'exportAllExcel', 'shareWhatsApp', 'print'],
+  staff: ['list', 'save', 'remove', 'activity'],
+  notes: ['listByClient', 'listByBranch', 'save', 'remove'],
+  share: ['whatsAppText', 'branchLocation'],
+  reports: ['visitPdf', 'agreementPdf', 'invoicePdf', 'exportClientExcel', 'exportAllExcel', 'shareWhatsApp', 'print'],
   search: ['global'],
   dashboard: ['stats'],
   users: ['list', 'save', 'remove'],
@@ -29,7 +32,7 @@ const API_MAP: Record<string, string[]> = {
   files: ['pickOpen', 'pickSave', 'saveDataUrl', 'importDocument'],
   settings: ['get', 'set', 'setLanguage', 'setTheme'],
   network: ['getMode', 'setHost', 'discover', 'connect', 'disconnect'],
-  app: ['about', 'seedDemoData'],
+  app: ['about', 'seedDemoData', 'state'],
 };
 
 const api: Record<string, Record<string, (...args: unknown[]) => Promise<unknown>>> = {};

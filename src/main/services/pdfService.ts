@@ -400,6 +400,157 @@ export async function generateVisitPdf(visitId: string, _dek: Buffer): Promise<s
   return writePdf(buildVisitDoc(visit, devices), out);
 }
 
+/**
+ * Printable invoice / service contract: line items, VAT with the shop's TRN,
+ * payment status and a signature block so the same document can be handed over
+ * as a contract.
+ */
+export async function generateInvoicePdf(invoiceId: string): Promise<string> {
+  const { invoicesRepo, settingsRepo } = require('../db/repositories/miscRepo') as typeof import('../db/repositories/miscRepo');
+  const invoice = invoicesRepo.get(invoiceId);
+  if (!invoice) throw new Error('INVOICE_NOT_FOUND');
+  const client = clientsRepo.get(invoice.clientId);
+  const contacts = clientsRepo.contacts(invoice.clientId);
+  const primary = contacts.find((c) => c.isPrimary) ?? contacts[0];
+
+  const shopName = settingsRepo.get('shop.name') ?? APP_NAME_AR;
+  const shopTrn = settingsRepo.get('shop.trn') ?? '';
+  const shopAddress = settingsRepo.get('shop.address') ?? '';
+  const shopPhone = settingsRepo.get('shop.phone') ?? AUTHOR.phone;
+
+  const money = (n: number) => n.toFixed(2);
+  const balance = invoice.total - invoice.paid;
+
+  const content: any[] = [
+    ...header('فاتورة / عقد صيانة', `${invoice.number} — ${invoice.date}`),
+
+    {
+      columns: [
+        {
+          width: '*',
+          stack: [
+            { text: ar('إلى (العميل)'), bold: true, alignment: 'right', color: '#0B4F8A' },
+            { text: ar(client?.nameAr ?? ''), alignment: 'right' },
+            { text: ar(primary?.name ?? ''), alignment: 'right', fontSize: 9 },
+            { text: primary?.phones?.[0] ?? '', alignment: 'right', fontSize: 9 },
+          ],
+        },
+        {
+          width: '*',
+          stack: [
+            { text: ar('من (المورّد)'), bold: true, alignment: 'right', color: '#0B4F8A' },
+            { text: ar(shopName), alignment: 'right' },
+            shopAddress ? { text: ar(shopAddress), alignment: 'right', fontSize: 9 } : {},
+            { text: shopPhone, alignment: 'right', fontSize: 9 },
+            shopTrn ? { text: ar(`الرقم الضريبي: ${shopTrn}`), alignment: 'right', fontSize: 9 } : {},
+          ],
+        },
+      ],
+      columnGap: 16,
+      margin: [0, 4, 0, 12],
+    },
+
+    labelValueTable([
+      ['رقم الفاتورة', invoice.number],
+      ['التاريخ', invoice.date],
+      ['تاريخ الاستحقاق', invoice.dueDate ?? '—'],
+      ...(invoice.trn ? [['الرقم الضريبي للعميل', invoice.trn] as [string, string]] : []),
+    ]),
+  ];
+
+  // ---- Line items ---------------------------------------------------------
+  const itemRows = invoice.items.length
+    ? invoice.items
+    : [{ id: 'x', description: 'خدمات صيانة', quantity: 1, unitPrice: invoice.subtotal || invoice.total }];
+
+  content.push({ text: ar('تفاصيل الفاتورة'), style: 'section', alignment: 'right' });
+  content.push({
+    table: {
+      headerRows: 1,
+      widths: [70, 70, 45, '*', 26],
+      body: [
+        ['الإجمالي', 'سعر الوحدة', 'الكمية', 'البيان', 'م']
+          .map((h) => ({ text: ar(h), style: 'th', alignment: 'right' })),
+        ...itemRows.map((it, i) => [
+          { text: money((Number(it.quantity) || 0) * (Number(it.unitPrice) || 0)), alignment: 'right', fontSize: 9 },
+          { text: money(Number(it.unitPrice) || 0), alignment: 'right', fontSize: 9 },
+          { text: String(it.quantity ?? 1), alignment: 'center', fontSize: 9 },
+          { text: ar(it.description), alignment: 'right', fontSize: 9 },
+          { text: String(i + 1), alignment: 'center', fontSize: 9 },
+        ]),
+      ],
+    },
+    layout: 'lightHorizontalLines',
+    margin: [0, 4, 0, 10],
+  });
+
+  // ---- Totals -------------------------------------------------------------
+  const totalsBody: any[] = [
+    [{ text: money(invoice.subtotal), alignment: 'right' }, { text: ar('المجموع قبل الضريبة'), alignment: 'right' }],
+  ];
+  if (invoice.taxRate > 0) {
+    totalsBody.push([
+      { text: money(invoice.taxAmount), alignment: 'right' },
+      { text: ar(`ضريبة القيمة المضافة (${invoice.taxRate}%)`), alignment: 'right' },
+    ]);
+  }
+  totalsBody.push([
+    { text: money(invoice.total), alignment: 'right', bold: true, fillColor: '#E3F2FD' },
+    { text: ar('الإجمالي المستحق'), alignment: 'right', bold: true, fillColor: '#E3F2FD' },
+  ]);
+  totalsBody.push([{ text: money(invoice.paid), alignment: 'right' }, { text: ar('المدفوع'), alignment: 'right' }]);
+  totalsBody.push([
+    { text: money(balance), alignment: 'right', bold: true, color: balance > 0 ? '#b91c1c' : '#15803d' },
+    { text: ar('المتبقي'), alignment: 'right', bold: true },
+  ]);
+
+  content.push({
+    columns: [
+      { width: '*', text: '' },
+      {
+        width: 260,
+        table: { widths: [90, '*'], body: totalsBody },
+        layout: 'lightHorizontalLines',
+      },
+    ],
+    margin: [0, 0, 0, 12],
+  });
+
+  if (invoice.terms) {
+    content.push({ text: ar('الشروط'), style: 'section', alignment: 'right' });
+    content.push({ text: ar(invoice.terms), alignment: 'right', fontSize: 9, margin: [0, 0, 0, 10] });
+  }
+  if (invoice.notes) {
+    content.push({ text: ar(`ملاحظات: ${invoice.notes}`), alignment: 'right', fontSize: 9, margin: [0, 0, 0, 10] });
+  }
+
+  content.push({
+    columns: [
+      { width: '*', stack: [{ text: ar('توقيع العميل'), alignment: 'center', bold: true, fontSize: 9 }, { text: '________________________', alignment: 'center', margin: [0, 18, 0, 0] }] },
+      { width: '*', stack: [{ text: ar('عن المورّد'), alignment: 'center', bold: true, fontSize: 9 }, { text: '________________________', alignment: 'center', margin: [0, 18, 0, 0] }] },
+    ],
+    margin: [0, 14, 0, 0],
+  });
+
+  const safe = (client?.nameAr ?? 'client').replace(/[\\/:*?"<>|]/g, '_');
+  const out = path.join(reportsDir(), `فاتورة-${invoice.number}-${safe}.pdf`);
+  return writePdf({
+    pageSize: 'A4',
+    pageMargins: [40, 40, 40, 50],
+    defaultStyle: { font: 'Arabic', fontSize: 10 },
+    content,
+    footer,
+    styles: {
+      brand: { fontSize: 18, bold: true, color: '#0B4F8A' },
+      brandEn: { fontSize: 12, bold: true, color: '#1E88E5' },
+      title: { fontSize: 15, bold: true, color: '#0B4F8A' },
+      subtitle: { fontSize: 11, color: '#374151' },
+      section: { fontSize: 12, bold: true, color: '#0B4F8A', margin: [0, 10, 0, 4] },
+      th: { bold: true, fontSize: 9, fillColor: '#E3F2FD', color: '#0B4F8A' },
+    },
+  }, out);
+}
+
 /** Service agreement / equipment handover document for a client. */
 export async function generateAgreementPdf(clientId: string): Promise<string> {
   const client = clientsRepo.get(clientId);

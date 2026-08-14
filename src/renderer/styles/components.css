@@ -415,6 +415,87 @@
 /* Divider */
 .divider { height: 1px; background: var(--border); border: none; margin: 14px 0; }
 
+/* In-app menu bar -------------------------------------------------------- */
+/* Translucent, rounded strip in place of the native Windows menu. */
+.app-menubar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+}
+
+.menubar-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition);
+}
+.menubar-btn:hover { background: var(--surface-hover); color: var(--text); }
+.menubar-btn.active {
+  background: var(--primary-100);
+  color: var(--primary-700);
+}
+
+.menubar-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline-start: 0;
+  min-width: 218px;
+  padding: 5px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  z-index: 900;
+  animation: slideUp 140ms cubic-bezier(.4, 0, .2, 1);
+}
+
+.menubar-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  padding: 7px 11px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: start;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.menubar-item:hover { background: var(--primary-100); color: var(--primary-700); }
+
+.menubar-shortcut {
+  font-family: 'Consolas', monospace;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.menubar-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 8px;
+}
+
 /* Sidebar ---------------------------------------------------------------- */
 /* Light theme keeps the deep brand blue; dark theme uses near-black navy so
    the panel does not glow brighter than the page it sits next to. */

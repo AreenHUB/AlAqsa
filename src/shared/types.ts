@@ -228,6 +228,12 @@ export interface Visit {
   visitDate: ISODate;
   nextVisitDate?: ISODate;
   technician?: string;
+  /** Link to the staff directory when the technician was picked from it. */
+  technicianId?: UUID;
+  /** AMC this visit is charged against, if any. */
+  amcContractId?: UUID;
+  /** False for extra//paid visits that should not consume an AMC allowance. */
+  countsAgainstAmc: boolean;
   checklist: MaintenanceChecklist;
   cameraChecks: CameraCheck[];
   replacedParts: ReplacedPart[];
@@ -268,8 +274,12 @@ export interface AmcContract {
   branchId?: UUID;
   startDate: ISODate;
   endDate: ISODate;
+  /** Agreed number of visits. Ignored when `unlimitedVisits` is true. */
   totalVisits: number;
+  /** Derived from linked visits, not typed by hand. */
   usedVisits: number;
+  /** "As needed" contracts: no fixed visit count. */
+  unlimitedVisits: boolean;
   amount?: number;
   notes?: string;
 }
@@ -282,9 +292,20 @@ export interface Invoice {
   number: string;
   date: ISODate;
   dueDate?: ISODate;
+  /** Sum of line items before tax. */
+  subtotal: number;
+  /** VAT percentage, e.g. 5 for the UAE. */
+  taxRate: number;
+  taxAmount: number;
+  /** subtotal + taxAmount */
   total: number;
   paid: number;
   status: InvoiceStatus;
+  /** UAE Tax Registration Number. */
+  trn?: string;
+  items: InvoiceItem[];
+  /** Terms printed on the document when used as a contract. */
+  terms?: string;
   notes?: string;
 }
 
@@ -311,6 +332,43 @@ export interface Reminder {
   leadDays: number; // notify N days before
   done: boolean;
   createdAt: ISODate;
+}
+
+// ---------------------------------------------------------------------------
+// Shop staff (technicians etc.)
+// ---------------------------------------------------------------------------
+
+export interface StaffMember {
+  id: UUID;
+  name: string;
+  role?: string; // فني، مساعد، مشرف...
+  phone?: string;
+  email?: string;
+  active: boolean;
+  /** One-off helper: kept out of the main suggestion list. */
+  isTemporary: boolean;
+  notes?: string;
+  createdAt: ISODate;
+}
+
+/** A dated, free-form note attached to a client / branch / device. */
+export interface NoteEntry {
+  id: UUID;
+  clientId?: UUID;
+  branchId?: UUID;
+  deviceId?: UUID;
+  body: string;
+  author?: string;
+  pinned: boolean;
+  createdAt: ISODate;
+}
+
+/** A single billable line on an invoice. */
+export interface InvoiceItem {
+  id: UUID;
+  description: string;
+  quantity: number;
+  unitPrice: number;
 }
 
 // ---------------------------------------------------------------------------

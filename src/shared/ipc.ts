@@ -5,8 +5,18 @@
 import type {
   Client, Contact, Branch, Device, DocumentRecord, CameraLicense,
   Visit, InventoryItem, AmcContract, Invoice, Reminder, AppUser,
-  AuditEntry, StatusLabel, MediaRef,
+  AuditEntry, StatusLabel, MediaRef, StaffMember, NoteEntry, Role,
 } from './types';
+
+export interface StaffActivity {
+  staffId?: string;
+  name: string;
+  total: number;
+  maintenance: number;
+  installation: number;
+  repair: number;
+  lastVisit?: string;
+}
 
 /** Result wrapper used by every IPC handler. */
 export type Ok<T> = { ok: true; data: T };
@@ -152,9 +162,28 @@ export interface IpcApi {
     save(input: Partial<StatusLabel>): Promise<Result<StatusLabel>>;
     remove(id: string): Promise<Result<null>>;
   };
+  staff: {
+    list(includeInactive?: boolean): Promise<Result<StaffMember[]>>;
+    save(input: Partial<StaffMember>): Promise<Result<StaffMember>>;
+    remove(id: string): Promise<Result<null>>;
+    activity(fromDate?: string, toDate?: string): Promise<Result<StaffActivity[]>>;
+  };
+  notes: {
+    listByClient(clientId: string): Promise<Result<NoteEntry[]>>;
+    listByBranch(branchId: string): Promise<Result<NoteEntry[]>>;
+    save(input: Partial<NoteEntry>): Promise<Result<NoteEntry>>;
+    remove(id: string): Promise<Result<null>>;
+  };
+  share: {
+    /** Opens WhatsApp with a ready message (location, note, or free text). */
+    whatsAppText(phone: string, message: string): Promise<Result<null>>;
+    /** Builds a maps link for a branch and shares it. */
+    branchLocation(branchId: string, phone: string): Promise<Result<null>>;
+  };
   reports: {
     visitPdf(visitId: string): Promise<Result<{ path: string }>>;
     agreementPdf(clientId: string): Promise<Result<{ path: string }>>;
+    invoicePdf(invoiceId: string): Promise<Result<{ path: string }>>;
     exportClientExcel(clientId: string): Promise<Result<{ path: string }>>;
     exportAllExcel(): Promise<Result<{ path: string }>>;
     shareWhatsApp(pdfPath: string, phone: string, message: string): Promise<Result<null>>;
@@ -202,8 +231,10 @@ export interface IpcApi {
   };
   app: {
     about(): Promise<Result<AboutInfo>>;
-    /** Populates demo data (لفة ورق عنب + samples) for a ready-to-explore app. */
+    /** Populates demo data. Refused once real records exist. */
     seedDemoData(): Promise<Result<{ clients: number }>>;
+    /** Whether the database is still empty, plus the current role. */
+    state(): Promise<Result<{ isEmpty: boolean; role: Role }>>;
   };
 }
 

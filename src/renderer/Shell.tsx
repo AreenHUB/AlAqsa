@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from './i18n/I18nContext';
 import { useToast } from './components/ui';
 import { GlobalSearch } from './components/GlobalSearch';
+import { AppMenuBar } from './components/AppMenuBar';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { ClientsScreen } from './screens/ClientsScreen';
 import { ClientDetailScreen } from './screens/ClientDetailScreen';
@@ -168,13 +169,20 @@ export function Shell({ onLock }: { onLock: () => void }) {
         <header className="row between" style={{
           height: 62, flexShrink: 0, padding: '0 20px',
           background: 'var(--surface)', borderBottom: '1px solid var(--border)',
-          gap: 16,
+          gap: 14,
         }}>
+          <AppMenuBar
+            onLock={lock}
+            onSearch={() => setSearchOpen(true)}
+            onAbout={() => navigate({ name: 'about' })}
+            onSettings={() => navigate({ name: 'settings' })}
+          />
+
           <button
             className="btn btn-outline"
             onClick={() => setSearchOpen(true)}
             style={{
-              flex: 1, maxWidth: 460, justifyContent: 'flex-start',
+              flex: 1, maxWidth: 400, justifyContent: 'flex-start',
               color: 'var(--text-faint)', fontWeight: 500,
             }}
           >

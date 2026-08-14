@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { getDb } from '../database';
-import { uuid, now, toBool, fromBool } from '../helpers';
+import { uuid, now, toBool, fromBool, parseJson } from '../helpers';
 import type {
   MediaRef, DocumentRecord, CameraLicense, InventoryItem, AmcContract,
   Invoice, Reminder, StatusLabel, AuditEntry, Client, Branch, Device, Contact,
@@ -178,10 +178,19 @@ export const inventoryRepo = {
 // AMC contracts
 // ---------------------------------------------------------------------------
 function mapAmc(r: any): AmcContract {
+  // usedVisits is DERIVED from the visits actually linked to this contract, so
+  // the counter can never drift from reality the way a hand-typed number does.
+  const used = (getDb().prepare(
+    'SELECT count(*) AS c FROM visits WHERE amc_contract_id = ? AND counts_against_amc = 1',
+  ).get(r.id) as { c: number }).c;
+
   return {
     id: r.id, clientId: r.client_id, branchId: r.branch_id ?? undefined,
-    startDate: r.start_date, endDate: r.end_date, totalVisits: r.total_visits,
-    usedVisits: r.used_visits, amount: r.amount ?? undefined, notes: r.notes ?? undefined,
+    startDate: r.start_date, endDate: r.end_date,
+    totalVisits: r.total_visits,
+    usedVisits: used,
+    unlimitedVisits: r.unlimited_visits === 1,
+    amount: r.amount ?? undefined, notes: r.notes ?? undefined,
   };
 }
 
@@ -198,18 +207,32 @@ export const amcRepo = {
     const db = getDb();
     const id = input.id ?? uuid();
     const exists = input.id && db.prepare('SELECT 1 FROM amc_contracts WHERE id = ?').get(input.id);
+    // used_visits stays in the table for older rows but is no longer authoritative.
     if (exists) {
       db.prepare(`UPDATE amc_contracts SET branch_id=?, start_date=?, end_date=?, total_visits=?,
-        used_visits=?, amount=?, notes=? WHERE id=?`)
+        unlimited_visits=?, amount=?, notes=? WHERE id=?`)
         .run(input.branchId ?? null, input.startDate, input.endDate, input.totalVisits ?? 0,
-          input.usedVisits ?? 0, input.amount ?? null, input.notes ?? null, id);
+          input.unlimitedVisits ? 1 : 0, input.amount ?? null, input.notes ?? null, id);
     } else {
-      db.prepare(`INSERT INTO amc_contracts (id, client_id, branch_id, start_date, end_date, total_visits, used_visits, amount, notes)
-        VALUES (?,?,?,?,?,?,?,?,?)`)
+      db.prepare(`INSERT INTO amc_contracts
+        (id, client_id, branch_id, start_date, end_date, total_visits, used_visits, unlimited_visits, amount, notes)
+        VALUES (?,?,?,?,?,?,0,?,?,?)`)
         .run(id, input.clientId, input.branchId ?? null, input.startDate, input.endDate,
-          input.totalVisits ?? 0, input.usedVisits ?? 0, input.amount ?? null, input.notes ?? null);
+          input.totalVisits ?? 0, input.unlimitedVisits ? 1 : 0,
+          input.amount ?? null, input.notes ?? null);
     }
     return this.get(id)!;
+  },
+
+  /** Contracts covering a branch on a given date — used to auto-link visits. */
+  activeFor(clientId: string, branchId: string, onDate: string): AmcContract[] {
+    const rows = getDb().prepare(
+      `SELECT * FROM amc_contracts
+       WHERE client_id = ? AND (branch_id IS NULL OR branch_id = ?)
+         AND start_date <= ? AND end_date >= ?
+       ORDER BY end_date`,
+    ).all(clientId, branchId, onDate, onDate) as any[];
+    return rows.map(mapAmc);
   },
   remove(id: string): void {
     getDb().prepare('DELETE FROM amc_contracts WHERE id = ?').run(id);
@@ -222,9 +245,25 @@ export const amcRepo = {
 function mapInvoice(r: any): Invoice {
   return {
     id: r.id, clientId: r.client_id, number: r.number, date: r.date,
-    dueDate: r.due_date ?? undefined, total: r.total, paid: r.paid,
-    status: r.status, notes: r.notes ?? undefined,
+    dueDate: r.due_date ?? undefined,
+    subtotal: r.subtotal ?? 0,
+    taxRate: r.tax_rate ?? 0,
+    taxAmount: r.tax_amount ?? 0,
+    total: r.total, paid: r.paid, status: r.status,
+    trn: r.trn ?? undefined,
+    items: parseJson<Invoice['items']>(r.items, []),
+    terms: r.terms ?? undefined,
+    notes: r.notes ?? undefined,
   };
+}
+
+/** Recompute money from the line items so the printed document always adds up. */
+function computeTotals(items: Invoice['items'], taxRate: number, fallbackTotal?: number) {
+  const subtotal = items.length
+    ? items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0)
+    : (fallbackTotal ?? 0);
+  const taxAmount = Math.round(subtotal * (taxRate / 100) * 100) / 100;
+  return { subtotal, taxAmount, total: Math.round((subtotal + taxAmount) * 100) / 100 };
 }
 
 export const invoicesRepo = {
@@ -239,18 +278,30 @@ export const invoicesRepo = {
   save(input: Partial<Invoice>): Invoice {
     const db = getDb();
     const id = input.id ?? uuid();
-    const total = input.total ?? 0;
+    const items = input.items ?? [];
+    const taxRate = input.taxRate ?? 0;
+    const { subtotal, taxAmount, total } = computeTotals(items, taxRate, input.total);
     const paid = input.paid ?? 0;
     const status: Invoice['status'] = paid <= 0 ? 'unpaid' : paid >= total ? 'paid' : 'partial';
     const exists = input.id && db.prepare('SELECT 1 FROM invoices WHERE id = ?').get(input.id);
+
+    const params = {
+      id, number: input.number ?? '', date: input.date ?? now().slice(0, 10),
+      due_date: input.dueDate ?? null, subtotal, tax_rate: taxRate, tax_amount: taxAmount,
+      total, paid, status, trn: input.trn ?? null,
+      items: JSON.stringify(items), terms: input.terms ?? null, notes: input.notes ?? null,
+    };
+
     if (exists) {
-      db.prepare('UPDATE invoices SET number=?, date=?, due_date=?, total=?, paid=?, status=?, notes=? WHERE id=?')
-        .run(input.number ?? '', input.date ?? now().slice(0, 10), input.dueDate ?? null,
-          total, paid, status, input.notes ?? null, id);
+      db.prepare(`UPDATE invoices SET number=@number, date=@date, due_date=@due_date,
+        subtotal=@subtotal, tax_rate=@tax_rate, tax_amount=@tax_amount, total=@total,
+        paid=@paid, status=@status, trn=@trn, items=@items, terms=@terms, notes=@notes
+        WHERE id=@id`).run(params);
     } else {
-      db.prepare('INSERT INTO invoices (id, client_id, number, date, due_date, total, paid, status, notes) VALUES (?,?,?,?,?,?,?,?,?)')
-        .run(id, input.clientId, input.number ?? '', input.date ?? now().slice(0, 10),
-          input.dueDate ?? null, total, paid, status, input.notes ?? null);
+      db.prepare(`INSERT INTO invoices
+        (id, client_id, number, date, due_date, subtotal, tax_rate, tax_amount, total, paid, status, trn, items, terms, notes)
+        VALUES (@id,@client_id,@number,@date,@due_date,@subtotal,@tax_rate,@tax_amount,@total,@paid,@status,@trn,@items,@terms,@notes)`)
+        .run({ ...params, client_id: input.clientId });
     }
     return this.get(id)!;
   },
