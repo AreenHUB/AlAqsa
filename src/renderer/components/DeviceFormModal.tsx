@@ -10,7 +10,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
-import { Modal, Field, TextInput, TextArea, Select, useToast } from './ui';
+import { Modal, Field, TextInput, TextArea, Select, useToast , useErrorMessage } from './ui';
 import { BarcodeInput } from './BarcodeInput';
 import { DEVICE_TYPES } from '@shared/constants';
 import { isValidSerial, isValidLabel, isDateOrderValid } from '../utils/validation';
@@ -28,6 +28,7 @@ export function DeviceFormModal({
 }) {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [targetBranch, setTargetBranch] = useState(branchId);
   const [type, setType] = useState('camera');
@@ -190,7 +191,7 @@ export function DeviceFormModal({
       : await window.alaqsa.devices.create(payload);
     setBusy(false);
 
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(device ? t.msg.updated : t.msg.created);
     onSaved();
   };

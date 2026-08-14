@@ -23,7 +23,12 @@ directories:
 files:
   - dist/**/*
   - package.json
-  - node_modules/**/*
+  # Only the native binding is resolved from node_modules at runtime; the rest
+  # of the main process (including all of pdfmake's tree) is bundled/copied
+  # into dist/ by scripts/build-main.mjs. This removes electron-builder's
+  # dependency guessing, which was silently dropping call-bind-apply-helpers
+  # and breaking every PDF export in the installed app.
+  - node_modules/better-sqlite3-multiple-ciphers/**/*
   - '!**/*.map'
 
 # Arabic fonts are needed at runtime for PDF generation.

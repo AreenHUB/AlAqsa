@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
   Modal, Field, TextInput, TextArea, Select, EmptyState, Badge,
-  ConfirmDialog, useToast, Loading, fmtDate, daysUntil,
+  ConfirmDialog, useToast, useErrorMessage, Loading, fmtDate, daysUntil,
 } from './ui';
 import { isDateOrderValid } from '../utils/validation';
 import type { CameraLicense, Branch } from '@shared/types';
@@ -20,6 +20,7 @@ export function LicensesPanel({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [items, setItems] = useState<CameraLicense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,7 +41,7 @@ export function LicensesPanel({
     const res = await window.alaqsa.licenses.remove(deleting.id);
     setDeleting(null);
     if (res.ok) { toast.success(t.msg.deleted); void load(); onChanged(); }
-    else toast.error(res.error);
+    else toast.error(errMsg(res.error));
   };
 
   const statusBadge = (l: CameraLicense) => {
@@ -142,6 +143,7 @@ function LicenseFormModal({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [number, setNumber] = useState('');
   const [branchId, setBranchId] = useState('');
@@ -181,7 +183,7 @@ function LicenseFormModal({
       notes: notes.trim() || undefined,
     });
     setBusy(false);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(license ? t.msg.updated : t.msg.created);
     onSaved();
   };

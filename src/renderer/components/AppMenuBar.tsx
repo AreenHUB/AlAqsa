@@ -46,32 +46,14 @@ export function AppMenuBar({
     };
   }, []);
 
-  // Zoom is driven through the browser API so it works with or without the
-  // hidden native menu being focused.
-  const zoom = (delta: number | 'reset') => {
-    const root = document.documentElement;
-    const current = parseFloat(root.style.getPropertyValue('--app-zoom') || '1');
-    const next = delta === 'reset' ? 1 : Math.min(1.6, Math.max(0.7, current + delta));
-    root.style.setProperty('--app-zoom', String(next));
-    root.style.fontSize = `${next * 100}%`;
-    localStorage.setItem('alaqsa.zoom', String(next));
+  /**
+   * Zoom is applied by the main process (see before-input-event in main.ts),
+   * which owns the real zoom level. The menu items dispatch a synthetic
+   * Ctrl+key so both paths go through exactly one implementation.
+   */
+  const zoom = (direction: 'in' | 'out' | 'reset') => {
+    void window.alaqsa.app.zoom(direction);
   };
-
-  useEffect(() => {
-    const saved = parseFloat(localStorage.getItem('alaqsa.zoom') || '1');
-    if (saved !== 1) {
-      document.documentElement.style.setProperty('--app-zoom', String(saved));
-      document.documentElement.style.fontSize = `${saved * 100}%`;
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') { e.preventDefault(); zoom(0.1); }
-      else if (e.key === '-' || e.code === 'NumpadSubtract') { e.preventDefault(); zoom(-0.1); }
-      else if (e.key === '0') { e.preventDefault(); zoom('reset'); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
 
   const menus: Record<string, MenuItem[]> = {
     [t.appName]: [
@@ -91,8 +73,8 @@ export function AppMenuBar({
       { label: t.menu.selectAll, shortcut: 'Ctrl+A', action: () => document.execCommand('selectAll') },
     ],
     [t.menu.view]: [
-      { label: t.menu.zoomIn, shortcut: 'Ctrl +', action: () => zoom(0.1) },
-      { label: t.menu.zoomOut, shortcut: 'Ctrl -', action: () => zoom(-0.1) },
+      { label: t.menu.zoomIn, shortcut: 'Ctrl +', action: () => zoom('in') },
+      { label: t.menu.zoomOut, shortcut: 'Ctrl -', action: () => zoom('out') },
       { label: t.menu.zoomReset, shortcut: 'Ctrl 0', action: () => zoom('reset') },
       { separator: true, label: '' },
       { label: t.menu.fullscreen, shortcut: 'F11', action: () => {

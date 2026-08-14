@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
   Modal, Field, TextInput, TextArea, EmptyState, Badge, Checkbox,
-  ConfirmDialog, useToast, Loading, fmtDate, daysUntil,
+  ConfirmDialog, useToast, useErrorMessage, Loading, fmtDate, daysUntil,
 } from './ui';
 import { isDateOrderValid, isPositiveNumber, todayISO } from '../utils/validation';
 import type { Invoice, AmcContract, InvoiceItem } from '@shared/types';
@@ -15,6 +15,7 @@ import type { Invoice, AmcContract, InvoiceItem } from '@shared/types';
 export function FinancePanel({ clientId }: { clientId: string }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [contracts, setContracts] = useState<AmcContract[]>([]);
@@ -38,7 +39,7 @@ export function FinancePanel({ clientId }: { clientId: string }) {
   /** Generate the invoice/contract PDF and hand it to the printer. */
   const printInvoice = async (invoiceId: string) => {
     const res = await window.alaqsa.reports.invoicePdf(invoiceId);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(t.reports.generated);
     await window.alaqsa.reports.print(res.data.path);
   };
@@ -50,7 +51,7 @@ export function FinancePanel({ clientId }: { clientId: string }) {
       : await window.alaqsa.amc.remove(deleting.id);
     setDeleting(null);
     if (res.ok) { toast.success(t.msg.deleted); void load(); }
-    else toast.error(res.error);
+    else toast.error(errMsg(res.error));
   };
 
   const statusBadge = (v: Invoice) => {
@@ -245,6 +246,7 @@ function InvoiceFormModal({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [number, setNumber] = useState('');
   const [date, setDate] = useState(todayISO());
@@ -308,7 +310,7 @@ function InvoiceFormModal({
       notes: notes.trim() || undefined,
     });
     setBusy(false);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(invoice ? t.msg.updated : t.msg.created);
     onSaved();
   };
@@ -438,6 +440,7 @@ function AmcFormModal({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [startDate, setStartDate] = useState(todayISO());
   const [endDate, setEndDate] = useState('');
@@ -477,7 +480,7 @@ function AmcFormModal({
       notes: notes.trim() || undefined,
     });
     setBusy(false);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(contract ? t.msg.updated : t.msg.created);
     onSaved();
   };

@@ -8,7 +8,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
-import { Modal, Field, TextInput, TextArea, Select, Checkbox, useToast, Badge } from './ui';
+import { Modal, Field, TextInput, TextArea, Select, Checkbox, useToast, useErrorMessage, Badge } from './ui';
 import { SignaturePad } from './SignaturePad';
 import { TechnicianPicker } from './TechnicianPicker';
 import { VISIT_TYPES } from '@shared/constants';
@@ -43,6 +43,7 @@ export function VisitFormModal({
 }) {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [branchId, setBranchId] = useState('');
   const [type, setType] = useState('maintenance');
@@ -185,7 +186,7 @@ export function VisitFormModal({
       ? await window.alaqsa.visits.update(visit.id, payload)
       : await window.alaqsa.visits.create(payload);
 
-    if (!res.ok) { setBusy(false); return toast.error(res.error); }
+    if (!res.ok) { setBusy(false); return toast.error(errMsg(res.error)); }
 
     // Optionally create a reminder for the next visit.
     if (makeReminder && nextVisitDate) {
@@ -206,7 +207,7 @@ export function VisitFormModal({
 
   const saveSignature = async (dataUrl: string, who: 'tech' | 'client') => {
     const res = await window.alaqsa.files.saveDataUrl(dataUrl, `signature-${who}-${Date.now()}.png`);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     if (who === 'tech') setSigTech(res.data); else setSigClient(res.data);
     toast.success(t.msg.saved);
   };

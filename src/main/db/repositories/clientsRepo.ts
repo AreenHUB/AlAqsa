@@ -45,6 +45,8 @@ export const clientsRepo = {
     const offset = Math.max(q.offset ?? 0, 0);
 
     const total = (db.prepare(`SELECT count(*) AS c FROM clients ${whereSql}`).get(params) as { c: number }).c;
+    // Sort strictly by the requested column. Flagged clients are highlighted in
+    // red rather than forced to the top, so an explicit sort is never overridden.
     const rows = db
       .prepare(`SELECT * FROM clients ${whereSql} ORDER BY ${sortBy} ${sortDir} LIMIT @limit OFFSET @offset`)
       .all({ ...params, limit, offset }) as ClientRow[];

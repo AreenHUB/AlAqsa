@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
   Modal, Field, TextInput, TextArea, Select, EmptyState, Badge,
-  ConfirmDialog, useToast, Loading, fmtDate, daysUntil,
+  ConfirmDialog, useToast, useErrorMessage, Loading, fmtDate, daysUntil,
 } from './ui';
 import { DOCUMENT_KINDS } from '@shared/constants';
 import type { DocumentRecord, Branch } from '@shared/types';
@@ -21,6 +21,7 @@ export function DocumentsPanel({
 }) {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,7 +43,7 @@ export function DocumentsPanel({
 
   const openDoc = async (id: string) => {
     const res = await window.alaqsa.documents.open(id);
-    if (!res.ok) toast.error(res.error);
+    if (!res.ok) toast.error(errMsg(res.error));
   };
 
   const confirmDelete = async () => {
@@ -50,7 +51,7 @@ export function DocumentsPanel({
     const res = await window.alaqsa.documents.remove(deleting.id);
     setDeleting(null);
     if (res.ok) { toast.success(t.msg.deleted); void load(); onChanged(); }
-    else toast.error(res.error);
+    else toast.error(errMsg(res.error));
   };
 
   const expiryBadge = (d: DocumentRecord) => {
@@ -149,6 +150,7 @@ function DocumentFormModal({
 }) {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [kind, setKind] = useState('passport');
   const [title, setTitle] = useState('');
@@ -185,7 +187,7 @@ function DocumentFormModal({
       clientId, branchId || null, kind, title.trim(), filePath,
     );
     setBusy(false);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(t.msg.created);
     onSaved();
   };

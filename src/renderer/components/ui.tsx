@@ -62,6 +62,21 @@ export function useToast(): ToastApi {
   return ctx;
 }
 
+/**
+ * Translate an error code from the main process into a readable sentence.
+ *
+ * The main process deliberately returns short stable codes rather than raw
+ * exception text, so the customer never sees a module path or SQL error.
+ */
+export function useErrorMessage() {
+  const { t } = useI18n();
+  return useCallback((code: string | undefined): string => {
+    if (!code) return t.msg.error;
+    const table = t.msg.errors as unknown as Record<string, string>;
+    return table[code] ?? t.msg.error;
+  }, [t]);
+}
+
 // ---------------------------------------------------------------------------
 // Modal
 // ---------------------------------------------------------------------------

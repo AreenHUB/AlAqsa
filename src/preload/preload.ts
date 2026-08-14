@@ -32,7 +32,7 @@ const API_MAP: Record<string, string[]> = {
   files: ['pickOpen', 'pickSave', 'saveDataUrl', 'importDocument'],
   settings: ['get', 'set', 'setLanguage', 'setTheme'],
   network: ['getMode', 'setHost', 'discover', 'connect', 'disconnect'],
-  app: ['about', 'seedDemoData', 'state'],
+  app: ['about', 'seedDemoData', 'state', 'zoom'],
 };
 
 const api: Record<string, Record<string, (...args: unknown[]) => Promise<unknown>>> = {};

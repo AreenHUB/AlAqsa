@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
   Modal, Field, TextInput, TextArea, Checkbox, Loading, EmptyState,
-  Badge, ConfirmDialog, useToast, fmtDate,
+  Badge, ConfirmDialog, useToast, useErrorMessage, fmtDate,
 } from './ui';
 import { isValidPhone, isValidEmail } from '../utils/validation';
 import type { StaffMember } from '@shared/types';
@@ -15,6 +15,7 @@ import type { StaffActivity } from '@shared/ipc';
 export function StaffTab() {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [activity, setActivity] = useState<StaffActivity[]>([]);
@@ -42,7 +43,7 @@ export function StaffTab() {
     const res = await window.alaqsa.staff.remove(deleting.id);
     setDeleting(null);
     if (res.ok) { toast.success(t.msg.deleted); void load(); }
-    else toast.error(res.error);
+    else toast.error(errMsg(res.error));
   };
 
   if (loading) return <Loading />;
@@ -190,6 +191,7 @@ function StaffFormModal({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [phone, setPhone] = useState('');
@@ -227,7 +229,7 @@ function StaffFormModal({
       active, isTemporary, notes: notes.trim() || undefined,
     });
     setBusy(false);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(member ? t.msg.updated : t.msg.created);
     onSaved();
   };

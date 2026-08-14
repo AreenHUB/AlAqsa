@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
-  Loading, EmptyState, Badge, Stars, Tabs, ConfirmDialog, useToast, fmtDate, daysUntil,
+  Loading, EmptyState, Badge, Stars, Tabs, ConfirmDialog, useToast, useErrorMessage, fmtDate, daysUntil,
 } from '../components/ui';
 import { ClientFormModal } from '../components/ClientFormModal';
 import { BranchFormModal } from '../components/BranchFormModal';
@@ -31,6 +31,7 @@ export function ClientDetailScreen({
 }) {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [client, setClient] = useState<Client | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -93,26 +94,26 @@ export function ClientDetailScreen({
     const res = await api.remove(deleting.id);
     setDeleting(null);
     if (res.ok) { toast.success(t.msg.deleted); void load(); }
-    else toast.error(res.error);
+    else toast.error(errMsg(res.error));
   };
 
   const generateVisitReport = async (visitId: string) => {
     const res = await window.alaqsa.reports.visitPdf(visitId);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(t.reports.generated);
     setShareTarget({ path: res.data.path });
   };
 
   const generateAgreement = async () => {
     const res = await window.alaqsa.reports.agreementPdf(clientId);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(t.reports.generated);
     setShareTarget({ path: res.data.path });
   };
 
   const exportExcel = async () => {
     const res = await window.alaqsa.reports.exportClientExcel(clientId);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(`${t.reports.generated}: ${res.data.path}`);
   };
 

@@ -9,7 +9,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
-import { Modal, useToast } from './ui';
+import { Modal, useToast , useErrorMessage } from './ui';
 import type { StaffMember } from '@shared/types';
 
 export function TechnicianPicker({
@@ -23,6 +23,7 @@ export function TechnicianPicker({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const [askAdd, setAskAdd] = useState<string | null>(null);
@@ -80,7 +81,7 @@ export function TechnicianPicker({
       name: askAdd, active: true, isTemporary: temporary,
     });
     setAskAdd(null);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     onChange(res.data.name, res.data.id);
     onStaffAdded();
     toast.success(t.msg.created);

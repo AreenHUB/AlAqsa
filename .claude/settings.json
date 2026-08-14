@@ -28,7 +28,14 @@
       "Bash(timeout 25 ./node_modules/electron/dist/electron.exe .)",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\); console.log\\('package.json valid'\\)\")",
       "Bash(unset ELECTRON_RUN_AS_NODE)",
-      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('deps:', d.get\\('dependencies'\\)\\)\")"
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('deps:', d.get\\('dependencies'\\)\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"console.log\\('سنجرب حلاً مختلفاً'\\)\")",
+      "Bash(python -)",
+      "Bash(rm -rf \"C:/Users/A/AppData/Roaming/Electron\")",
+      "Bash(timeout 110 ./node_modules/electron/dist/electron.exe \"C:/Users/A/AppData/Local/Temp/claude/g--projects-AlAqsa/d6ed7227-ce04-43c0-a7d4-f14e33594480/scratchpad/final2.js\")",
+      "Bash(timeout 60 ./node_modules/electron/dist/electron.exe \"C:/Users/A/AppData/Local/Temp/claude/g--projects-AlAqsa/d6ed7227-ce04-43c0-a7d4-f14e33594480/scratchpad/pdferr.js\")",
+      "Bash(npx electron-builder *)"
     ]
   }
 }

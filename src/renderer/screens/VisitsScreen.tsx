@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
-  Loading, EmptyState, Badge, Select, useToast, fmtDate,
+  Loading, EmptyState, Badge, Select, useToast, useErrorMessage, fmtDate,
 } from '../components/ui';
 import { ShareReportModal } from '../components/ShareReportModal';
 import type { Route } from '../Shell';
@@ -21,6 +21,7 @@ interface Row {
 export function VisitsScreen({ navigate }: { navigate: (r: Route) => void }) {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,7 +69,7 @@ export function VisitsScreen({ navigate }: { navigate: (r: Route) => void }) {
 
   const generateReport = async (row: Row) => {
     const res = await window.alaqsa.reports.visitPdf(row.visit.id);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     const contacts = await window.alaqsa.clients.contacts(row.client.id);
     toast.success(t.reports.generated);
     setShare({

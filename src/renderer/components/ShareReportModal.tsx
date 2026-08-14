@@ -8,7 +8,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
-import { Modal, Field, TextArea, Select, useToast } from './ui';
+import { Modal, Field, TextArea, Select, useToast , useErrorMessage } from './ui';
 import type { Contact } from '@shared/types';
 import { APP_NAME_AR } from '@shared/constants';
 
@@ -23,6 +23,7 @@ export function ShareReportModal({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const allPhones = contacts.flatMap((c) => c.phones.map((p) => ({ phone: p, name: c.name })));
   const [phone, setPhone] = useState('');
@@ -41,13 +42,13 @@ export function ShareReportModal({
   const share = async () => {
     if (!phone) return toast.warning(t.reports.selectPhone);
     const res = await window.alaqsa.reports.shareWhatsApp(pdfPath, phone, message);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     onClose();
   };
 
   const print = async () => {
     const res = await window.alaqsa.reports.print(pdfPath);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     onClose();
   };
 

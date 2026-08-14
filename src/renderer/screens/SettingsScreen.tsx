@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
   Modal, Field, TextInput, Select, Tabs, Loading, Badge,
-  ConfirmDialog, useToast, EmptyState, fmtDate,
+  ConfirmDialog, useToast, useErrorMessage, EmptyState, fmtDate,
 } from '../components/ui';
 import { StaffTab } from '../components/StaffTab';
 import { LicenseTab } from '../components/LicenseTab';
@@ -16,6 +16,7 @@ import type { StatusLabel, AppUser, AuditEntry } from '@shared/types';
 export function SettingsScreen({ onLock }: { onLock: () => void }) {
   const { t, lang, setLang } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
   const [tab, setTab] = useState('general');
 
   const tabs = [
@@ -93,6 +94,7 @@ function GeneralTab() {
 function SecurityTab({ onLock }: { onLock: () => void }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [pwOpen, setPwOpen] = useState(false);
   const [recOpen, setRecOpen] = useState(false);
@@ -255,6 +257,7 @@ function SecurityTab({ onLock }: { onLock: () => void }) {
 function LabelsTab() {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
   const [labels, setLabels] = useState<StatusLabel[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<StatusLabel | null>(null);
@@ -284,7 +287,7 @@ function LabelsTab() {
     const res = await window.alaqsa.statusLabels.save({
       id: editing?.id, name_ar: nameAr.trim(), name_en: nameEn.trim() || nameAr.trim(), color,
     });
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(t.msg.saved);
     setOpen(false);
     void load();
@@ -363,6 +366,7 @@ function LabelsTab() {
 function NetworkTab() {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
   const [mode, setMode] = useState<'standalone' | 'host' | 'client'>('standalone');
   const [hostAddress, setHostAddress] = useState<string | undefined>();
   const [hosts, setHosts] = useState<{ name: string; address: string; port: number }[]>([]);
@@ -377,7 +381,7 @@ function NetworkTab() {
 
   const makeHost = async () => {
     const res = await window.alaqsa.network.setHost();
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(t.msg.saved);
     void load();
   };
@@ -387,21 +391,21 @@ function NetworkTab() {
     setHosts([]);
     const res = await window.alaqsa.network.discover();
     setSearching(false);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     setHosts(res.data);
     if (res.data.length === 0) toast.warning(t.settings.noHostsFound);
   };
 
   const connect = async (address: string, port: number) => {
     const res = await window.alaqsa.network.connect(address, port);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(t.settings.connected);
     void load();
   };
 
   const disconnect = async () => {
     const res = await window.alaqsa.network.disconnect();
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(t.msg.saved);
     void load();
   };
@@ -465,6 +469,7 @@ function NetworkTab() {
 function DataTab() {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
   const [busy, setBusy] = useState('');
   const [resetOpen, setResetOpen] = useState(false);
   const [resetPassword, setResetPassword] = useState('');
@@ -484,7 +489,7 @@ function DataTab() {
     setBusy('backup');
     const res = await window.alaqsa.backup.now();
     setBusy('');
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(`${t.settings.backupCreated}: ${res.data.path}`);
   };
 
@@ -492,7 +497,7 @@ function DataTab() {
     setBusy('export');
     const res = await window.alaqsa.backup.exportEncrypted();
     setBusy('');
-    if (!res.ok) { if (res.error !== 'CANCELLED') toast.error(res.error); return; }
+    if (!res.ok) { if (res.error !== 'CANCELLED') toast.error(errMsg(res.error)); return; }
     toast.success(`${t.settings.backupCreated}: ${res.data.path}`);
   };
 
@@ -502,7 +507,7 @@ function DataTab() {
     setBusy('restore');
     const res = await window.alaqsa.backup.restore(picked.data);
     setBusy('');
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(t.msg.updated);
   };
 
@@ -510,7 +515,7 @@ function DataTab() {
     setBusy('seed');
     const res = await window.alaqsa.app.seedDemoData();
     setBusy('');
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(res.data.clients > 0 ? t.settings.seedDone : t.settings.seedSkipped);
     void refreshState();
   };
@@ -614,6 +619,7 @@ function DataTab() {
 function UsersTab() {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
   const [users, setUsers] = useState<AppUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -646,7 +652,7 @@ function UsersTab() {
       { id: editing?.id, username: username.trim(), displayName: displayName.trim(), role: role as AppUser['role'], active: true },
       password || undefined,
     );
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(t.msg.saved);
     setOpen(false);
     void load();

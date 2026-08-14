@@ -10,7 +10,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
   Modal, Field, TextArea, TextInput, Select, EmptyState, Badge,
-  ConfirmDialog, useToast, Loading, Checkbox,
+  ConfirmDialog, useToast, useErrorMessage, Loading, Checkbox,
 } from './ui';
 import type { NoteEntry, Branch, StaffMember } from '@shared/types';
 
@@ -23,6 +23,7 @@ export function NotesPanel({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -49,7 +50,7 @@ export function NotesPanel({
     const res = await window.alaqsa.notes.remove(deleting.id);
     setDeleting(null);
     if (res.ok) { toast.success(t.msg.deleted); void load(); }
-    else toast.error(res.error);
+    else toast.error(errMsg(res.error));
   };
 
   const shareNote = (note: NoteEntry) => {
@@ -170,6 +171,7 @@ function NoteFormModal({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
   const [body, setBody] = useState('');
   const [branchId, setBranchId] = useState('');
   const [author, setAuthor] = useState('');
@@ -197,7 +199,7 @@ function NoteFormModal({
       pinned,
     });
     setBusy(false);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(note ? t.msg.updated : t.msg.created);
     onSaved();
   };
@@ -256,6 +258,7 @@ function ShareToTeamModal({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
   const [phone, setPhone] = useState('');
   const [text, setText] = useState('');
 

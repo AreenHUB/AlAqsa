@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
   Modal, Field, TextInput, Select, Loading, EmptyState, Badge,
-  ConfirmDialog, useToast, fmtDate, daysUntil,
+  ConfirmDialog, useToast, useErrorMessage, fmtDate, daysUntil,
 } from '../components/ui';
 import { todayISO } from '../utils/validation';
 import type { Route } from '../Shell';
@@ -15,6 +15,7 @@ import type { Reminder, Client } from '@shared/types';
 export function RemindersScreen({ navigate }: { navigate: (r: Route) => void }) {
   const { t, fmt } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [items, setItems] = useState<Reminder[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -197,6 +198,7 @@ function ReminderFormModal({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [title, setTitle] = useState('');
   const [kind, setKind] = useState('custom');
@@ -234,7 +236,7 @@ function ReminderFormModal({
       done: reminder?.done ?? false,
     });
     setBusy(false);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(reminder ? t.msg.updated : t.msg.created);
     onSaved();
   };

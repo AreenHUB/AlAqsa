@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
   Modal, Field, TextInput, TextArea, Select, Loading, EmptyState,
-  ConfirmDialog, useToast, Badge,
+  ConfirmDialog, useToast, useErrorMessage, Badge,
 } from '../components/ui';
 import { DEVICE_TYPES } from '@shared/constants';
 import { isPositiveNumber } from '../utils/validation';
@@ -15,6 +15,7 @@ import type { InventoryItem } from '@shared/types';
 export function InventoryScreen() {
   const { t, lang, fmt } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +47,7 @@ export function InventoryScreen() {
     ]);
     if (!picked.ok || !picked.data) return;
     const res = await window.alaqsa.inventory.importExcel(picked.data);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(fmt(t.inventory.imported, { n: res.data.imported }));
     void load();
   };
@@ -56,7 +57,7 @@ export function InventoryScreen() {
     const res = await window.alaqsa.inventory.remove(deleting.id);
     setDeleting(null);
     if (res.ok) { toast.success(t.msg.deleted); void load(); }
-    else toast.error(res.error);
+    else toast.error(errMsg(res.error));
   };
 
   const shown = typeFilter ? items.filter((i) => i.type === typeFilter) : items;
@@ -202,6 +203,7 @@ function InventoryFormModal({
 }) {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [type, setType] = useState('camera');
   const [manufacturer, setManufacturer] = useState('');
@@ -242,7 +244,7 @@ function InventoryFormModal({
       unitPrice: unitPrice ? Number(unitPrice) : undefined,
     });
     setBusy(false);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(item ? t.msg.updated : t.msg.created);
     onSaved();
   };

@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
-import { Select, Loading, useToast } from '../components/ui';
+import { Select, Loading, useToast , useErrorMessage } from '../components/ui';
 import { ShareReportModal } from '../components/ShareReportModal';
 import type { Route } from '../Shell';
 import type { Client, Contact } from '@shared/types';
@@ -12,6 +12,7 @@ import type { Client, Contact } from '@shared/types';
 export function ReportsScreen({ navigate }: { navigate: (r: Route) => void }) {
   const { t } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [clients, setClients] = useState<Client[]>([]);
   const [selected, setSelected] = useState('');
@@ -33,7 +34,7 @@ export function ReportsScreen({ navigate }: { navigate: (r: Route) => void }) {
     setBusy('agreement');
     const res = await window.alaqsa.reports.agreementPdf(selected);
     setBusy('');
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     const contacts = await window.alaqsa.clients.contacts(selected);
     toast.success(t.reports.generated);
     setShare({
@@ -48,7 +49,7 @@ export function ReportsScreen({ navigate }: { navigate: (r: Route) => void }) {
     setBusy('clientExcel');
     const res = await window.alaqsa.reports.exportClientExcel(selected);
     setBusy('');
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(`${t.reports.generated}: ${res.data.path}`);
   };
 
@@ -56,7 +57,7 @@ export function ReportsScreen({ navigate }: { navigate: (r: Route) => void }) {
     setBusy('allExcel');
     const res = await window.alaqsa.reports.exportAllExcel();
     setBusy('');
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(`${t.reports.generated}: ${res.data.path}`);
   };
 

@@ -44,11 +44,16 @@ function pdfMake(): any {
  * process working directory or on which script started Electron.
  */
 function fontsDirectory(): string {
+  // The main process is bundled, so __dirname is dist/main (not the original
+  // source folder). Several roots are probed so the lookup holds for the
+  // packaged app, the unpackaged build and a plain source run alike.
   const candidates = [
-    path.join(process.resourcesPath ?? '', 'fonts'),
-    // dist/main/services -> repo root
+    path.join(process.resourcesPath ?? '', 'fonts'),        // packaged
+    path.join(app.getAppPath(), 'assets', 'fonts'),         // asar / app root
+    path.join(app.getAppPath(), '..', 'fonts'),             // resources sibling
+    path.join(__dirname, '..', '..', 'assets', 'fonts'),    // dist/main -> repo
     path.join(__dirname, '..', '..', '..', 'assets', 'fonts'),
-    path.join(app.getAppPath(), 'assets', 'fonts'),
+    path.join(process.cwd(), 'assets', 'fonts'),            // dev fallback
   ];
   for (const dir of candidates) {
     if (dir && fs.existsSync(path.join(dir, 'NotoNaskhArabic-Regular.ttf'))) return dir;

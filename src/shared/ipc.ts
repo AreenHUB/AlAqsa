@@ -235,6 +235,8 @@ export interface IpcApi {
     seedDemoData(): Promise<Result<{ clients: number }>>;
     /** Whether the database is still empty, plus the current role. */
     state(): Promise<Result<{ isEmpty: boolean; role: Role }>>;
+    /** Adjust the window zoom (owned by the main process). */
+    zoom(direction: 'in' | 'out' | 'reset'): Promise<Result<null>>;
   };
 }
 

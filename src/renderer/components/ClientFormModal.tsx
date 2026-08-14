@@ -5,7 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
-  Modal, Field, TextInput, TextArea, Select, Checkbox, Stars, StringList, useToast,
+  Modal, Field, TextInput, TextArea, Select, Checkbox, Stars, StringList, useToast, useErrorMessage,
 } from './ui';
 import { CLIENT_TYPES } from '@shared/constants';
 import type { Client, Contact, StatusLabel } from '@shared/types';
@@ -35,6 +35,7 @@ export function ClientFormModal({
 }) {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [nameAr, setNameAr] = useState('');
   const [nameEn, setNameEn] = useState('');
@@ -120,7 +121,7 @@ export function ClientFormModal({
 
     if (!res.ok) {
       setBusy(false);
-      toast.error(res.error);
+      toast.error(errMsg(res.error));
       return;
     }
 

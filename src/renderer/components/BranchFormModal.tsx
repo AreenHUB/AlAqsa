@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
-import { Modal, Field, TextInput, TextArea, Select, useToast } from './ui';
+import { Modal, Field, TextInput, TextArea, Select, useToast , useErrorMessage } from './ui';
 import { isValidLat, isValidLng, isValidUrl, isValidPhone } from '../utils/validation';
 import type { Branch, StatusLabel } from '@shared/types';
 
@@ -20,6 +20,7 @@ export function BranchFormModal({
 }) {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [nameAr, setNameAr] = useState('');
   const [nameEn, setNameEn] = useState('');
@@ -83,7 +84,7 @@ export function BranchFormModal({
       : await window.alaqsa.branches.create(payload);
     setBusy(false);
 
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(branch ? t.msg.updated : t.msg.created);
     onSaved();
   };

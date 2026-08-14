@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
-  Loading, EmptyState, Badge, Stars, ConfirmDialog, useToast, Select, fmtDate,
+  Loading, EmptyState, Badge, Stars, ConfirmDialog, useToast, useErrorMessage, Select, fmtDate,
 } from '../components/ui';
 import { ClientFormModal } from '../components/ClientFormModal';
 import type { Route } from '../Shell';
@@ -17,6 +17,7 @@ type ViewMode = 'table' | 'cards';
 export function ClientsScreen({ navigate }: { navigate: (r: Route) => void }) {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const errMsg = useErrorMessage();
 
   const [rows, setRows] = useState<Client[]>([]);
   const [labels, setLabels] = useState<StatusLabel[]>([]);
@@ -84,7 +85,7 @@ export function ClientsScreen({ navigate }: { navigate: (r: Route) => void }) {
     const res = await window.alaqsa.clients.remove(deleting.id);
     setDeleting(null);
     if (res.ok) { toast.success(t.msg.deleted); void load(); }
-    else toast.error(res.error);
+    else toast.error(errMsg(res.error));
   };
 
   const toggleSort = (col: string) => {

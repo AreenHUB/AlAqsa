@@ -10,6 +10,8 @@ import path from 'node:path';
 import { SecureStore } from './security/secureStore';
 import { LicenseManager } from './security/license';
 import { registerIpcHandlers } from './ipc/registry';
+import { setCurrentUser } from './security/permissions';
+import type { Role } from '@shared/types';
 import { readJson, writeJson, configPath } from './storage/paths';
 import { closeDatabase } from './db/database';
 import { startReminderScheduler } from './services/reminderService';
@@ -107,6 +109,31 @@ function createWindow(): void {
 
   win.setMenuBarVisibility(false);
   win.once('ready-to-show', () => win.show());
+
+  /**
+   * Zoom shortcuts.
+   *
+   * Menu accelerators alone proved unreliable here: the menu bar is hidden, and
+   * Windows reports Ctrl+"+" as Ctrl+Shift+"=" on most layouts, so the
+   * accelerator never matched. Handling the raw key event before the page sees
+   * it makes Ctrl +/-/0 work regardless of keyboard layout.
+   */
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || !input.control) return;
+    const wc = win.webContents;
+    const key = input.key;
+
+    if (key === '+' || key === '=' || key === 'Add') {
+      wc.setZoomLevel(Math.min(wc.getZoomLevel() + 0.5, 5));
+      event.preventDefault();
+    } else if (key === '-' || key === '_' || key === 'Subtract') {
+      wc.setZoomLevel(Math.max(wc.getZoomLevel() - 0.5, -3));
+      event.preventDefault();
+    } else if (key === '0') {
+      wc.setZoomLevel(0);
+      event.preventDefault();
+    }
+  });
 
   // Allow the in-app camera scanner (and nothing else). Electron denies media
   // access by default, which made getUserMedia fail silently.
@@ -212,6 +239,10 @@ app.on('before-quit', () => {
   closeDatabase();
 });
 
-export function getContext(): AppContext {
-  return ctx;
+export function getContext(): AppContext & {
+  __setRole: (id: string | null, role: Role | null) => void;
+} {
+  // __setRole exists so the automated security suite can exercise every role
+  // through the real IPC boundary. It is not reachable from the renderer.
+  return Object.assign(ctx, { __setRole: setCurrentUser });
 }

@@ -34,10 +34,46 @@ import { deviceQrDataUrl } from '../services/qrService';
 import { networkService } from '../services/networkService';
 
 const ok = <T>(data: T): Result<T> => ({ ok: true, data });
-const err = (e: unknown): Result<never> => ({
-  ok: false,
-  error: e instanceof Error ? e.message : String(e),
-});
+
+/**
+ * Turn an exception into something a shop owner can act on.
+ *
+ * Raw messages (module stacks, SQLite errors, filesystem paths) are logged for
+ * diagnosis but never returned verbatim: a short stable `code` is sent instead
+ * and the renderer renders the message in the user's language.
+ */
+function classifyError(e: unknown): { code: string; error: string } {
+  const raw = e instanceof Error ? e.message : String(e);
+
+  // Known, expected conditions keep their identifiers.
+  const known = [
+    'LOCKED', 'FORBIDDEN', 'LICENSE_INVALID', 'NOT_INITIALIZED',
+    'ALREADY_INITIALIZED', 'WRONG_PASSWORD', 'WRONG_RECOVERY_KEY',
+    'PASSWORD_TOO_SHORT', 'NOT_FOUND', 'DATA_EXISTS', 'CANCELLED',
+    'NO_LOCATION', 'FILE_NOT_FOUND', 'INVALID_LICENSE',
+    'VISIT_NOT_FOUND', 'CLIENT_NOT_FOUND', 'INVOICE_NOT_FOUND',
+    'ARABIC_FONTS_NOT_FOUND', 'NO_SHEET', 'INVALID_DATA_URL',
+  ];
+  if (known.includes(raw)) return { code: raw, error: raw };
+
+  // Everything else is an internal fault: log the detail, return a code.
+  console.error('[AlAqsa] internal error:', raw);
+  if (/Cannot find module|MODULE_NOT_FOUND/.test(raw)) {
+    return { code: 'REPORT_ENGINE_MISSING', error: 'REPORT_ENGINE_MISSING' };
+  }
+  if (/ENOENT|EACCES|EPERM|EBUSY/.test(raw)) {
+    return { code: 'FILE_ACCESS_FAILED', error: 'FILE_ACCESS_FAILED' };
+  }
+  if (/SQLITE|database|no such table/i.test(raw)) {
+    return { code: 'DATABASE_ERROR', error: 'DATABASE_ERROR' };
+  }
+  return { code: 'INTERNAL_ERROR', error: 'INTERNAL_ERROR' };
+}
+
+const err = (e: unknown): Result<never> => {
+  const { code, error } = classifyError(e);
+  return { ok: false, error, code };
+};
 
 /**
  * Wrap a handler with uniform error handling and a role check.
@@ -679,6 +715,15 @@ export function registerIpcHandlers(ctx: AppContext): void {
     auditRepo.log('seed', 'demo_data', undefined, `${res.clients} clients`);
     notifyDataChanged(ctx, 'all');
     return res;
+  });
+
+  handle('app:zoom', (direction: 'in' | 'out' | 'reset') => {
+    const wc = ctx.mainWindow?.webContents;
+    if (!wc) return null;
+    if (direction === 'reset') wc.setZoomLevel(0);
+    else if (direction === 'in') wc.setZoomLevel(Math.min(wc.getZoomLevel() + 0.5, 5));
+    else wc.setZoomLevel(Math.max(wc.getZoomLevel() - 0.5, -3));
+    return null;
   });
 
   /** Lets the UI hide the demo button (and show the current role) sensibly. */
