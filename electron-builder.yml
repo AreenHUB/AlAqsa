@@ -1,0 +1,63 @@
+# ============================================================================
+# AlAqsa — Windows packaging configuration.
+#
+# Data lives in %AppData%\Roaming\AlAqsa (outside the install directory), so
+# uninstalling or installing an update never touches existing client records.
+# ============================================================================
+
+appId: com.areenhub.alaqsa
+productName: AlAqsa
+copyright: © 2026 Areen Abou Fakher. All rights reserved.
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - package.json
+  - '!**/*.map'
+  - '!**/node_modules/*/{test,__tests__,tests,example,examples,doc,docs}/**'
+  - '!**/*.{md,markdown,txt}'
+
+# Arabic fonts are needed at runtime for PDF generation.
+extraResources:
+  - from: assets/fonts
+    to: fonts
+    filter: ['**/*.ttf', 'OFL.txt']
+
+asar: true
+# Native SQLCipher binding must stay unpacked to be loadable.
+asarUnpack:
+  - '**/node_modules/better-sqlite3-multiple-ciphers/**'
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: AlAqsa-Setup-${version}.${ext}
+  # Signing is applied afterwards by scripts/sign-app.ps1 using a certificate
+  # generated locally — no paid certificate is required for in-shop use.
+  signAndEditExecutable: true
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AlAqsa
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  # Never remove the user's data directory on uninstall.
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  displayLanguageSelector: false
+  installerLanguages:
+    - en_US
+
+# Updates install over the previous version and keep %AppData% intact.
+publish: null

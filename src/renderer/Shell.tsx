@@ -101,11 +101,9 @@ export function Shell({ onLock }: { onLock: () => void }) {
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       {/* ---- Sidebar ---- */}
-      <aside style={{
+      <aside className="app-sidebar" style={{
         width: sidebarW,
         flexShrink: 0,
-        background: 'linear-gradient(180deg, var(--primary-800), var(--primary-900))',
-        color: '#fff',
         display: 'flex',
         flexDirection: 'column',
         transition: 'width 180ms cubic-bezier(.4,0,.2,1)',

@@ -29,7 +29,8 @@ appdata/
 *.pem
 *.key
 certs/
-license-issuer/keys/
+tools/license-issuer/keys/
+tools/license-issuer/issued-licenses.json
 .env
 .env.local
 

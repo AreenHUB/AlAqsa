@@ -414,3 +414,15 @@
 
 /* Divider */
 .divider { height: 1px; background: var(--border); border: none; margin: 14px 0; }
+
+/* Sidebar ---------------------------------------------------------------- */
+/* Light theme keeps the deep brand blue; dark theme uses near-black navy so
+   the panel does not glow brighter than the page it sits next to. */
+.app-sidebar {
+  background: linear-gradient(180deg, #0B4F8A, #063461);
+  color: #fff;
+}
+:root[data-theme='dark'] .app-sidebar {
+  background: linear-gradient(180deg, #0e1a2b, #0a1421);
+  border-inline-end: 1px solid var(--border);
+}
