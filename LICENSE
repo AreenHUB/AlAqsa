@@ -1,0 +1,84 @@
+PROPRIETARY SOFTWARE LICENCE
+حقوق ملكية محفوظة
+
+AlAqsa — CCTV Client & Maintenance Management System
+الأقصى — نظام إدارة عملاء وصيانة كاميرات المراقبة
+
+Copyright © 2026 Areen Abou Fakher (أرين أبو فاخر).
+All rights reserved. جميع الحقوق محفوظة.
+
+--------------------------------------------------------------------------
+ENGLISH
+--------------------------------------------------------------------------
+
+This software and its source code, design, documentation and all associated
+materials are the exclusive property of Areen Abou Fakher.
+
+You MAY NOT, without prior written permission from the copyright holder:
+
+  1. Copy, reproduce or redistribute this software in any form.
+  2. Modify, adapt, translate or create derivative works from it.
+  3. Reverse engineer, decompile or disassemble any part of it.
+  4. Sell, rent, lease, sublicense or otherwise transfer it to any party.
+  5. Remove or alter any copyright, trademark or authorship notice.
+  6. Use it beyond the scope of the licence granted to you.
+
+Use of this software requires a valid licence key issued by the copyright
+holder. Licences may be time limited. When a licence expires or is revoked
+the application locks and stops functioning; the customer's own data is
+preserved in encrypted form and is not deleted.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE
+USE OF THIS SOFTWARE.
+
+The customer remains responsible for keeping backups of their own data and
+for complying with all applicable laws, including the United Arab Emirates
+Personal Data Protection Law regarding any personal data they store.
+
+--------------------------------------------------------------------------
+العربية
+--------------------------------------------------------------------------
+
+هذا البرنامج وشيفرته المصدرية وتصميمه ووثائقه وجميع المواد المرتبطة به
+ملك حصري للمبرمج أرين أبو فاخر.
+
+لا يجوز لك، دون إذن خطي مسبق من صاحب الحقوق:
+
+  ١. نسخ البرنامج أو إعادة إنتاجه أو توزيعه بأي شكل.
+  ٢. تعديله أو ترجمته أو اشتقاق أعمال منه.
+  ٣. الهندسة العكسية أو فك التجميع لأي جزء منه.
+  ٤. بيعه أو تأجيره أو ترخيصه من الباطن أو نقله لأي طرف.
+  ٥. إزالة أو تغيير أي إشعار بحقوق الملكية أو نسبة التأليف.
+  ٦. استخدامه خارج نطاق الترخيص الممنوح لك.
+
+يتطلب استخدام هذا البرنامج مفتاح ترخيص صالحاً صادراً عن صاحب الحقوق. وقد
+تكون التراخيص محدودة المدة. وعند انتهاء الترخيص أو إيقافه يُقفل التطبيق
+ويتوقف عن العمل، مع الحفاظ على بيانات العميل مشفّرة دون حذفها.
+
+يُقدَّم البرنامج "كما هو" دون أي ضمانات صريحة أو ضمنية. ولا يتحمل المبرمج
+أي مسؤولية عن أي أضرار تنشأ عن استخدامه.
+
+يبقى العميل مسؤولاً عن الاحتفاظ بنسخ احتياطية من بياناته وعن الالتزام
+بالقوانين المعمول بها، بما في ذلك قانون حماية البيانات الشخصية في دولة
+الإمارات العربية المتحدة بخصوص أي بيانات شخصية يخزّنها.
+
+--------------------------------------------------------------------------
+CONTACT / للتواصل
+--------------------------------------------------------------------------
+
+Areen Abou Fakher — أرين أبو فاخر
+Phone   : +971509471769
+Email   : arin.aboufakher@gmail.com
+GitHub  : AreenHUB
+
+--------------------------------------------------------------------------
+THIRD-PARTY COMPONENTS / مكونات الطرف الثالث
+--------------------------------------------------------------------------
+
+This product bundles open-source components under their own licences,
+including Electron, React, SQLite/SQLCipher, pdfmake and ExcelJS. The
+Noto Naskh Arabic font is used under the SIL Open Font License 1.1
+(see assets/fonts/OFL.txt).
