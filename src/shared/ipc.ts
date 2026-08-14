@@ -32,7 +32,16 @@ export interface AuthStatus {
 }
 
 export type LicenseState =
-  | { status: 'valid'; expiresAt?: string; perpetual: boolean }
+  | {
+      status: 'valid';
+      expiresAt?: string;
+      perpetual: boolean;
+      /**
+       * Set when the build carries no licence public key, so licence checks
+       * are bypassed. Such a build must never be given to a customer.
+       */
+      unlicensedDevBuild?: boolean;
+    }
   | { status: 'expired'; expiredAt: string }
   | { status: 'revoked' }
   | { status: 'missing' };

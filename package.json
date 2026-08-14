@@ -23,7 +23,8 @@
     "package": "npm run build && electron-builder --win --x64",
     "package:dir": "npm run build && electron-builder --win --dir",
     "sign": "powershell -ExecutionPolicy Bypass -File scripts/sign-app.ps1",
-    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "prepackage": "node scripts/check-license-key.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

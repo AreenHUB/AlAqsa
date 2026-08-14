@@ -55,6 +55,12 @@ const common = {
   alias: {
     '@shared': path.join(root, 'src/shared'),
   },
+  // Bake the licence public key into the bundle. Reading it from process.env
+  // at runtime silently disabled licensing in packaged builds, because the
+  // customer's machine has no such variable.
+  define: {
+    __LICENSE_PUBLIC_KEY__: JSON.stringify(process.env.ALAQSA_LICENSE_PUBKEY ?? ''),
+  },
   logLevel: 'info',
 };
 

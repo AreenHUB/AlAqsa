@@ -132,6 +132,8 @@ export const translations = {
       notActive: 'غير مفعّل',
       perpetualNote: 'الترخيص دائم ولا ينتهي. التطبيق ملكك بالكامل.',
       expiringSoonNote: 'الترخيص على وشك الانتهاء — تواصل مع المطوّر للتجديد قبل أن يُقفل التطبيق.',
+      devBuildTitle: 'نسخة تطوير — بلا حماية ترخيص',
+      devBuildBody: 'لم يُدمج مفتاح الترخيص العام في هذه النسخة، لذا تمنح ترخيصاً دائماً لأي شخص. لا تُسلّم هذه النسخة لعميل. أعد بناءها بعد تحديد المفتاح العام:',
       upgradeHint: 'إذا استلمت مفتاحاً جديداً (مثلاً بعد سداد المبلغ كاملاً)، الصقه هنا ليتم تفعيله فوراً دون انتظار انتهاء المدة الحالية.',
     },
 
@@ -730,6 +732,8 @@ export const translations = {
       notActive: 'Not active',
       perpetualNote: 'This licence is perpetual and never expires. The app is fully yours.',
       expiringSoonNote: 'This licence expires soon — contact the developer to renew before the app locks.',
+      devBuildTitle: 'Development build — licence checks disabled',
+      devBuildBody: 'No licence public key was embedded in this build, so it grants a perpetual licence to anyone. Do not give this build to a customer. Rebuild it with the public key set:',
       upgradeHint: 'If you received a new key (e.g. after paying in full), paste it here to activate it immediately without waiting for the current period to end.',
     },
 

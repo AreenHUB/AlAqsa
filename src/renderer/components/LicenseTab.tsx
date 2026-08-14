@@ -63,8 +63,32 @@ export function LicenseTab() {
     </Badge>;
   };
 
+  const isDevBuild = state.status === 'valid' && state.unlicensedDevBuild === true;
+
   return (
     <div className="col gap-16">
+      {/* A build with no embedded public key grants everyone a perpetual
+          licence. That is fine while developing and disastrous if shipped, so
+          it is called out unmissably rather than left to be discovered later. */}
+      {isDevBuild && (
+        <div style={{
+          padding: '14px 16px', borderRadius: 'var(--radius-lg)',
+          background: 'var(--danger-bg)', border: '2px solid var(--danger)',
+          color: '#b91c1c', lineHeight: 1.75,
+        }}>
+          <div className="bold" style={{ fontSize: 14.5, marginBottom: 6 }}>
+            ⚠️ {t.license.devBuildTitle}
+          </div>
+          <div style={{ fontSize: 13 }}>{t.license.devBuildBody}</div>
+          <div className="mono" style={{
+            marginTop: 10, padding: '8px 10px', background: 'rgba(0,0,0,.06)',
+            borderRadius: 'var(--radius-sm)', fontSize: 11.5, direction: 'ltr',
+          }}>
+            set ALAQSA_LICENSE_PUBKEY=&lt;public key&gt;<br />npm run package
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
         {/* Current status */}
         <div className="card">
