@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+release/
+out/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local runtime data (must NEVER be committed — contains client data)
+appdata/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# Secrets / certificates / license private keys (Areen-only, never commit)
+*.pfx
+*.pem
+*.key
+certs/
+license-issuer/keys/
+.env
+.env.local
+
+# Temp
+*.tmp
+~$*
