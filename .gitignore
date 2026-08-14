@@ -37,3 +37,6 @@ tools/license-issuer/issued-licenses.json
 # Temp
 *.tmp
 ~$*
+
+# Personal working notes (kept locally, not part of the project)
+كلود.txt
