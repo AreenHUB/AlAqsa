@@ -29,14 +29,19 @@ export function AppMenuBar({
   const barRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const onDown = (e: MouseEvent) => {
+    // Close on any interaction outside the bar. Both mousedown and click are
+    // observed so programmatic clicks (and clicks that land on the body) also
+    // dismiss the menu.
+    const onOutside = (e: Event) => {
       if (barRef.current && !barRef.current.contains(e.target as Node)) setOpenMenu(null);
     };
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenMenu(null); };
-    document.addEventListener('mousedown', onDown);
+    document.addEventListener('mousedown', onOutside);
+    document.addEventListener('click', onOutside);
     document.addEventListener('keydown', onEsc);
     return () => {
-      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('mousedown', onOutside);
+      document.removeEventListener('click', onOutside);
       document.removeEventListener('keydown', onEsc);
     };
   }, []);
