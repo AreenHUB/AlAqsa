@@ -127,6 +127,12 @@ export const translations = {
       invalidLicense: 'مفتاح الترخيص غير صالح',
       validUntil: 'صالح حتى',
       perpetual: 'ترخيص دائم',
+      currentStatus: 'حالة الترخيص',
+      timeLimited: 'ترخيص محدد المدة',
+      notActive: 'غير مفعّل',
+      perpetualNote: 'الترخيص دائم ولا ينتهي. التطبيق ملكك بالكامل.',
+      expiringSoonNote: 'الترخيص على وشك الانتهاء — تواصل مع المطوّر للتجديد قبل أن يُقفل التطبيق.',
+      upgradeHint: 'إذا استلمت مفتاحاً جديداً (مثلاً بعد سداد المبلغ كاملاً)، الصقه هنا ليتم تفعيله فوراً دون انتظار انتهاء المدة الحالية.',
     },
 
     // Dashboard
@@ -697,6 +703,12 @@ export const translations = {
       invalidLicense: 'Invalid license key',
       validUntil: 'Valid until',
       perpetual: 'Perpetual license',
+      currentStatus: 'Licence status',
+      timeLimited: 'Time-limited licence',
+      notActive: 'Not active',
+      perpetualNote: 'This licence is perpetual and never expires. The app is fully yours.',
+      expiringSoonNote: 'This licence expires soon — contact the developer to renew before the app locks.',
+      upgradeHint: 'If you received a new key (e.g. after paying in full), paste it here to activate it immediately without waiting for the current period to end.',
     },
 
     dashboard: {

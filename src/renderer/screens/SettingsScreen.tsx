@@ -10,6 +10,7 @@ import {
   ConfirmDialog, useToast, EmptyState, fmtDate,
 } from '../components/ui';
 import { StaffTab } from '../components/StaffTab';
+import { LicenseTab } from '../components/LicenseTab';
 import type { StatusLabel, AppUser, AuditEntry } from '@shared/types';
 
 export function SettingsScreen({ onLock }: { onLock: () => void }) {
@@ -23,6 +24,7 @@ export function SettingsScreen({ onLock }: { onLock: () => void }) {
     { id: 'labels', label: t.settings.statusLabels },
     { id: 'staff', label: t.staff.title },
     { id: 'network', label: t.settings.network },
+    { id: 'license', label: t.license.title },
     { id: 'data', label: t.settings.dataManagement },
     { id: 'users', label: t.settings.users },
     { id: 'audit', label: t.settings.auditLog },
@@ -40,6 +42,7 @@ export function SettingsScreen({ onLock }: { onLock: () => void }) {
       {tab === 'labels' && <LabelsTab />}
       {tab === 'staff' && <StaffTab />}
       {tab === 'network' && <NetworkTab />}
+      {tab === 'license' && <LicenseTab />}
       {tab === 'data' && <DataTab />}
       {tab === 'users' && <UsersTab />}
       {tab === 'audit' && <AuditTab />}
