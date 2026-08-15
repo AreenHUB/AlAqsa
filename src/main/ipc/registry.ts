@@ -90,9 +90,15 @@ const err = (e: unknown): Result<never> => {
  */
 const UNGATED = new Set([
   'auth:status', 'auth:unlock', 'auth:unlockWithRecovery',
-  'auth:firstRunSetup', 'auth:lock', 'license:state', 'app:about',
+  'auth:firstRunSetup', 'auth:lock', 'app:about',
   'settings:setLanguage', 'settings:setTheme', 'network:getMode',
   'auth:listUsers', 'auth:signIn', 'auth:signOut', 'auth:currentUser',
+  // Licensing must work BEFORE anyone can be authenticated: with no valid
+  // licence the app never opens, so requiring a role to activate one is a
+  // deadlock — the licence screen could never submit a key. Activation is
+  // safe to leave open because a key is only accepted if it carries a valid
+  // signature from the developer's private key.
+  'license:state', 'license:activate',
 ]);
 
 function handle<T>(channel: string, fn: (...args: any[]) => T | Promise<T>): void {

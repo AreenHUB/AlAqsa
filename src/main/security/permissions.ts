@@ -93,7 +93,9 @@ const CHANNEL_CAPS: Record<string, Capability> = {
   'network:setHost': 'admin',
   'network:connect': 'admin',
   'network:disconnect': 'admin',
-  'license:activate': 'admin',
+  // NOTE: 'license:activate' is deliberately NOT listed here. It is exempt
+  // from role checks (see UNGATED in registry.ts) because a licence must be
+  // activatable before anyone can sign in — the app does not open without one.
   'audit:recent': 'admin',
   'app:seedDemoData': 'admin',
   'reports:exportAllExcel': 'admin',
