@@ -48,7 +48,13 @@ export function InventoryScreen() {
     if (!picked.ok || !picked.data) return;
     const res = await window.alaqsa.inventory.importExcel(picked.data);
     if (!res.ok) return toast.error(errMsg(res.error));
-    toast.success(fmt(t.inventory.imported, { n: res.data.imported }));
+    const { imported, updated, negativeStock } = res.data;
+    toast.success(fmt(t.inventory.imported, { n: imported, u: updated }));
+    // Items the source file reported as over-issued were stored as zero; say so
+    // rather than letting a wrong stock figure pass unnoticed.
+    if (negativeStock > 0) {
+      toast.warning(fmt(t.inventory.importNegative, { n: negativeStock }));
+    }
     void load();
   };
 

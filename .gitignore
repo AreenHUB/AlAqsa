@@ -40,3 +40,7 @@ tools/license-issuer/issued-licenses.json
 
 # Personal working notes (kept locally, not part of the project)
 كلود.txt
+
+# Shop business data — never commit real client/stock files
+*.xlsx
+!templates/*.xlsx

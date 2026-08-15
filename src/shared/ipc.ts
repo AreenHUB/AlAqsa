@@ -159,7 +159,10 @@ export interface IpcApi {
     list(search?: string): Promise<Result<InventoryItem[]>>;
     upsert(input: Partial<InventoryItem>): Promise<Result<InventoryItem>>;
     remove(id: string): Promise<Result<null>>;
-    importExcel(sourcePath: string): Promise<Result<{ imported: number }>>;
+    importExcel(sourcePath: string): Promise<Result<{
+      imported: number; updated: number; skipped: number;
+      negativeStock: number; headerRow: number;
+    }>>;
   };
   amc: {
     listByClient(clientId: string): Promise<Result<AmcContract[]>>;

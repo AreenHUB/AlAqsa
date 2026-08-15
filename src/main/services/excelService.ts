@@ -14,6 +14,7 @@ import { branchesRepo } from '../db/repositories/branchesRepo';
 import { devicesRepo } from '../db/repositories/devicesRepo';
 import { visitsRepo } from '../db/repositories/visitsRepo';
 import { inventoryRepo, camLicenseRepo, invoicesRepo } from '../db/repositories/miscRepo';
+import { getDb } from '../db/database';
 import { DEVICE_TYPES, CLIENT_TYPES, VISIT_TYPES } from '@shared/constants';
 
 const HEADER_FILL: ExcelJS.Fill = {
@@ -218,53 +219,255 @@ export async function exportAllExcel(): Promise<string> {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Inventory import
+//
+// Two shapes of file have to work:
+//
+//  A. A simple sheet the owner types himself — headers on row 1, one column per
+//     inventory field (النوع / الموديل / الكمية / السعر …).
+//
+//  B. A stock report exported from the shop's accounting program. Those have a
+//     letterhead above the real header row, Arabic movement columns rather than
+//     a plain "quantity", and a totals row at the bottom. The header is found by
+//     scanning instead of assuming row 1, so the letterhead does not break it.
+//
+// Neither shape carries a device type, so the type is inferred from the item
+// name when the column is absent — otherwise all 500+ rows land in "أخرى" and
+// the filters on the inventory screen become useless.
+// ---------------------------------------------------------------------------
+
+/** Header text -> inventory field. Compared lowercased with spaces collapsed. */
+const INVENTORY_HEADERS: Record<string, string> = {
+  // type
+  'النوع': 'type', 'type': 'type', 'الصنف': 'type', 'category': 'type',
+  // manufacturer
+  'الشركة': 'manufacturer', 'الشركة المصنعة': 'manufacturer', 'الماركة': 'manufacturer',
+  'manufacturer': 'manufacturer', 'brand': 'manufacturer',
+  // model / name — accounting exports call this simply "الاسم"
+  'الموديل': 'model', 'model': 'model', 'الاسم': 'model', 'اسم الصنف': 'model',
+  'المادة': 'model', 'اسم المادة': 'model', 'name': 'model', 'item': 'model',
+  'item name': 'model', 'description of goods': 'model',
+  // description
+  'الوصف': 'description', 'description': 'description', 'ملاحظات': 'description',
+  // plain quantity
+  'الكمية': 'quantity', 'quantity': 'quantity', 'qty': 'quantity',
+  'الرصيد': 'quantity', 'الكمية المتوفرة': 'quantity', 'balance': 'quantity',
+  'stock': 'quantity',
+  // unit price
+  'سعر الوحدة': 'unitPrice', 'السعر': 'unitPrice', 'price': 'unitPrice',
+  'unit price': 'unitPrice', 'سعر المفرق': 'unitPrice', 'سعر البيع': 'unitPrice',
+  // --- movement columns (accounting exports) ---
+  'كميةرصيد البداية': 'openingQty', 'كمية رصيد البداية': 'openingQty',
+  'كميةالادخالات': 'inQty', 'كمية الادخالات': 'inQty', 'كميةالإدخالات': 'inQty',
+  'قيمةالادخالات': 'inValue', 'قيمة الادخالات': 'inValue', 'قيمةالإدخالات': 'inValue',
+  'كميةالاخراجات': 'outQty', 'كمية الاخراجات': 'outQty', 'كميةالإخراجات': 'outQty',
+  'كمية الشراء': 'purchaseQty', 'قيمة الشراء': 'purchaseValue',
+  'الحد الأدنى': 'minQty', 'الحد الادنى': 'minQty',
+  // row number column, recognised so it is never mistaken for data
+  'الرقم': 'rowNo', '#': 'rowNo', 'no': 'rowNo', 'no.': 'rowNo',
+};
+
 /**
- * Import shop inventory from Excel. Accepts Arabic or English headers and maps
- * them to inventory fields; unknown columns are ignored.
+ * Guess a device type from the item name. Order matters: the more specific
+ * patterns are tested first, so "POE SWITCH" is a poe_switch and not a switch,
+ * and a "CAMERA CABLE" is not counted as a camera.
  */
-export async function importInventoryExcel(sourcePath: string): Promise<{ imported: number }> {
+const TYPE_PATTERNS: Array<[string, RegExp]> = [
+  ['other', /\bCABLE\b|\bWIRE\b|كيبل|كابل|سلك/i],
+  ['nvr', /\bNVR\b/i],
+  ['dvr', /\bDVR\b|\bXVR\b|\bHVR\b/i],
+  ['poe_switch', /\bPOE\b/i],
+  ['switch', /\bSWITCH\b|سويتش|سويچ/i],
+  ['router', /\bROUTER\b|راوتر|\bACCESS\s*POINT\b|\bREPEATER\b|\bMODEM\b/i],
+  ['ups', /\bUPS\b|\bBATTERY\s*BACKUP\b/i],
+  ['hdd', /\bHDD\b|\bHARD\b|\bSSD\b|قرص صلب|هارد/i],
+  ['camera', /\bCAMERA\b|\bCAM\b|كاميرا|\bBALLON\b|\bBULLET\b|\bDOME\b|\bIPC\b|\bPTZ\b|\b\d+\s*MP\b/i],
+];
+
+function guessDeviceType(name: string): string {
+  for (const [type, re] of TYPE_PATTERNS) if (re.test(name)) return type;
+  return 'other';
+}
+
+/** Normalise a header cell for lookup. */
+function normHeader(v: unknown): string {
+  return String(v ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/** Read a cell as a number, tolerating formulas, blanks and stray text. */
+function cellNumber(cell: ExcelJS.Cell): number {
+  const v: any = cell.value;
+  if (v == null || v === '') return 0;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'object') {
+    const inner = v.result ?? v.text;
+    const n = Number(inner);
+    return Number.isFinite(n) ? n : 0;
+  }
+  const n = Number(String(v).replace(/[,\s]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Read a cell as trimmed display text. */
+function cellText(cell: ExcelJS.Cell): string {
+  const v: any = cell.value;
+  if (v == null) return '';
+  if (typeof v === 'object') {
+    if (Array.isArray(v.richText)) return v.richText.map((r: any) => r.text).join('').trim();
+    return String(v.text ?? v.result ?? '').trim();
+  }
+  return String(v).trim();
+}
+
+/**
+ * Find the header row. Accounting exports put a shop letterhead on the first
+ * few rows, so row 1 cannot be assumed. The winning row is the one matching the
+ * most known headers, and it must contain an item-name column to be usable.
+ */
+function findHeaderRow(sheet: ExcelJS.Worksheet): { row: number; cols: Record<string, number> } {
+  let best = { row: 0, cols: {} as Record<string, number>, score: 0 };
+  const limit = Math.min(sheet.rowCount, 30);
+
+  for (let r = 1; r <= limit; r++) {
+    const cols: Record<string, number> = {};
+    let score = 0;
+    sheet.getRow(r).eachCell((cell, col) => {
+      const field = INVENTORY_HEADERS[normHeader(cell.value)];
+      // First match wins, so a duplicated header cannot overwrite the real one.
+      if (field && cols[field] === undefined) { cols[field] = col; score++; }
+    });
+    if (score > best.score) best = { row: r, cols, score };
+  }
+
+  if (!best.score || best.cols.model === undefined) throw new Error('NO_HEADER_ROW');
+  return { row: best.row, cols: best.cols };
+}
+
+export interface InventoryImportResult {
+  imported: number;
+  updated: number;
+  skipped: number;
+  /** Rows whose computed stock was negative in the source file. */
+  negativeStock: number;
+  headerRow: number;
+}
+
+/**
+ * Import shop inventory from Excel. Existing items are matched by name so the
+ * same file can be re-imported after a stock-take without creating duplicates.
+ */
+export async function importInventoryExcel(sourcePath: string): Promise<InventoryImportResult> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile(sourcePath);
   const sheet = wb.worksheets[0];
   if (!sheet) throw new Error('NO_SHEET');
 
-  const headerRow = sheet.getRow(1);
-  const cols: Record<string, number> = {};
-  headerRow.eachCell((cell, col) => {
-    const h = String(cell.value ?? '').trim().toLowerCase();
-    const map: Record<string, string> = {
-      'النوع': 'type', 'type': 'type',
-      'الشركة': 'manufacturer', 'الشركة المصنعة': 'manufacturer', 'manufacturer': 'manufacturer', 'brand': 'manufacturer',
-      'الموديل': 'model', 'model': 'model',
-      'الوصف': 'description', 'description': 'description',
-      'الكمية': 'quantity', 'quantity': 'quantity', 'qty': 'quantity',
-      'سعر الوحدة': 'unitPrice', 'السعر': 'unitPrice', 'price': 'unitPrice', 'unit price': 'unitPrice',
-    };
-    if (map[h]) cols[map[h]] = col;
+  const { row: headerRow, cols } = findHeaderRow(sheet);
+
+  const typeByName: Record<string, string> = {};
+  DEVICE_TYPES.forEach((t) => {
+    typeByName[t.ar] = t.value;
+    typeByName[t.en.toLowerCase()] = t.value;
+    typeByName[t.value] = t.value;
   });
 
-  const typeByAr: Record<string, string> = {};
-  DEVICE_TYPES.forEach((t) => { typeByAr[t.ar] = t.value; typeByAr[t.en.toLowerCase()] = t.value; });
+  // Match on name so a re-import updates rather than duplicates.
+  const existing = new Map<string, string>();
+  for (const item of inventoryRepo.list()) {
+    const key = (item.model ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (key) existing.set(key, item.id);
+  }
 
-  let imported = 0;
-  sheet.eachRow((row, idx) => {
-    if (idx === 1) return;
-    const cell = (key: string) => (cols[key] ? String(row.getCell(cols[key]).value ?? '').trim() : '');
-    const model = cell('model');
-    const manufacturer = cell('manufacturer');
-    if (!model && !manufacturer) return;
-    const rawType = cell('type');
-    const type = typeByAr[rawType] ?? typeByAr[rawType.toLowerCase()] ?? 'other';
-    inventoryRepo.upsert({
+  const result: InventoryImportResult = {
+    imported: 0, updated: 0, skipped: 0, negativeStock: 0, headerRow,
+  };
+
+  // Hundreds of rows: one transaction keeps it fast and all-or-nothing, so a
+  // bad row halfway down cannot leave the inventory partly imported.
+  const runImport = getDb().transaction(() => {
+  for (let r = headerRow + 1; r <= sheet.rowCount; r++) {
+    const row = sheet.getRow(r);
+    const at = (field: string) => (cols[field] !== undefined ? row.getCell(cols[field]) : null);
+
+    const nameCell = at('model');
+    const model = nameCell ? cellText(nameCell) : '';
+    const manufacturer = at('manufacturer') ? cellText(at('manufacturer')!) : '';
+    if (!model && !manufacturer) { result.skipped++; continue; }
+
+    // The trailing totals row carries a label but no item identity.
+    if (/^(الاجمالي|الإجمالي|المجموع|total|grand total)$/i.test(model)) { result.skipped++; continue; }
+
+    // Printed reports repeat their column headers at the top of every page.
+    // Those rows look like data, so drop any row whose name cell is itself a
+    // known header — otherwise "الاسم" is inserted as an inventory item.
+    if (INVENTORY_HEADERS[normHeader(model)] !== undefined) { result.skipped++; continue; }
+
+    // --- quantity ---------------------------------------------------------
+    // A plain quantity column wins. Otherwise reconstruct the closing balance
+    // from the movement columns: opening + entries - exits.
+    let quantity: number | undefined;
+    if (cols.quantity !== undefined) {
+      quantity = cellNumber(at('quantity')!);
+    } else if (cols.inQty !== undefined || cols.outQty !== undefined || cols.openingQty !== undefined) {
+      const opening = cols.openingQty !== undefined ? cellNumber(at('openingQty')!) : 0;
+      const entries = cols.inQty !== undefined ? cellNumber(at('inQty')!) : 0;
+      const exits = cols.outQty !== undefined ? cellNumber(at('outQty')!) : 0;
+      const balance = opening + entries - exits;
+      if (balance < 0) {
+        // The source export is inconsistent for this item (more went out than
+        // ever came in). Record it as zero rather than inventing a number, and
+        // report the count so the owner knows which figures to re-check.
+        result.negativeStock++;
+        quantity = 0;
+      } else {
+        quantity = balance;
+      }
+    }
+
+    // --- unit price -------------------------------------------------------
+    // Prefer an explicit price; otherwise derive the average cost actually paid
+    // (value of entries / quantity of entries).
+    let unitPrice: number | undefined;
+    if (cols.unitPrice !== undefined) {
+      unitPrice = cellNumber(at('unitPrice')!) || undefined;
+    } else {
+      const valueCol = cols.inValue !== undefined ? 'inValue' : (cols.purchaseValue !== undefined ? 'purchaseValue' : null);
+      const qtyCol = cols.inQty !== undefined ? 'inQty' : (cols.purchaseQty !== undefined ? 'purchaseQty' : null);
+      if (valueCol && qtyCol) {
+        const value = cellNumber(at(valueCol)!);
+        const qty = cellNumber(at(qtyCol)!);
+        if (value > 0 && qty > 0) unitPrice = Math.round((value / qty) * 100) / 100;
+      }
+    }
+
+    // --- type -------------------------------------------------------------
+    const rawType = cols.type !== undefined ? cellText(at('type')!) : '';
+    const type = typeByName[rawType] ?? typeByName[rawType.toLowerCase()]
+      ?? guessDeviceType(`${model} ${manufacturer}`);
+
+    const key = model.replace(/\s+/g, ' ').trim().toLowerCase();
+    const existingId = key ? existing.get(key) : undefined;
+
+    const saved = inventoryRepo.upsert({
+      id: existingId,
       type: type as any,
       manufacturer: manufacturer || undefined,
       model: model || undefined,
-      description: cell('description') || undefined,
-      quantity: cell('quantity') ? Number(cell('quantity')) || undefined : undefined,
-      unitPrice: cell('unitPrice') ? Number(cell('unitPrice')) || undefined : undefined,
+      description: cols.description !== undefined ? (cellText(at('description')!) || undefined) : undefined,
+      quantity,
+      unitPrice,
     });
-    imported++;
+
+    if (existingId) {
+      result.updated++;
+    } else {
+      result.imported++;
+      if (key) existing.set(key, saved.id);
+    }
+  }
   });
 
-  return { imported };
+  runImport();
+  return result;
 }
