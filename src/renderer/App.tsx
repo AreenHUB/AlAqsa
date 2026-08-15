@@ -6,7 +6,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { I18nProvider, useI18n } from './i18n/I18nContext';
 import { ToastProvider } from './components/ui';
 import { LockScreen } from './screens/LockScreen';
-import { SignInScreen } from './screens/SignInScreen';
 import { FirstRunScreen } from './screens/FirstRunScreen';
 import { LicenseScreen } from './screens/LicenseScreen';
 import { Shell } from './Shell';
@@ -17,7 +16,6 @@ function Root() {
   const { lang, setLang } = useI18n();
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [booted, setBooted] = useState(false);
-  const [signedIn, setSignedIn] = useState(false);
 
   const refresh = useCallback(async () => {
     const res = await window.alaqsa.auth.status();
@@ -41,7 +39,6 @@ function Root() {
   // Re-lock when the main process says so.
   useEffect(() => {
     return window.alaqsa.events.onLocked(() => {
-      setSignedIn(false);
       setStatus((prev) => (prev ? { ...prev, unlocked: false } : prev));
     });
   }, []);
@@ -62,13 +59,10 @@ function Root() {
   if (!status.initialized) return <FirstRunScreen onDone={refresh} />;
   if (!status.unlocked) return <LockScreen onUnlocked={refresh} />;
 
-  // After the data is unlocked, ask who is using the app so the right role
-  // applies. The screen steps aside automatically when no users are set up.
-  if (!signedIn) {
-    return <SignInScreen onSignedIn={() => setSignedIn(true)} onSkip={() => setSignedIn(true)} />;
-  }
-
-  return <Shell onLock={() => { setSignedIn(false); refresh(); }} />;
+  // Unlocking with the master password already establishes the owner session
+  // (admin), so the app opens straight away. Staff switch to their own account
+  // from inside the app — they are never asked for the master password.
+  return <Shell onLock={refresh} />;
 }
 
 export function App() {

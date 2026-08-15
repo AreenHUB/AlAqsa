@@ -104,23 +104,41 @@ export function capabilityFor(channel: string): Capability {
 }
 
 /**
- * The signed-in user for this session.
+ * The signed-in identity for this session.
  *
- * SECURITY: when accounts exist, an unauthenticated session has NO role and is
- * refused. Falling back to 'admin' here (as an earlier version did) meant
- * anyone holding the master password could press "continue as owner" and act
- * as an administrator without knowing any account password — the role system
- * was decorative. The fallback now applies only while no accounts exist at
- * all, which is the genuine single-operator case on a fresh install.
+ * There are exactly two ways to obtain a role:
+ *
+ *  1. THE OWNER — proves it by entering the master password, which is the key
+ *     that decrypts the database. Nobody else can open the app at all, so
+ *     whoever holds it is by definition the owner and gets 'admin'. Asking
+ *     them for a second, separate password would add friction without adding
+ *     security: they already hold the strongest secret in the system.
+ *
+ *  2. A STAFF MEMBER — picks their name and enters THEIR OWN password. They
+ *     never need the master password; the owner unlocks the machine once and
+ *     staff sign in and out on top of that.
+ *
+ * SECURITY: a session that has done neither has NO role. An earlier version
+ * defaulted to 'admin' for unauthenticated sessions, which let anyone skip the
+ * sign-in screen and act as an administrator.
  */
 let currentRole: Role | null = null;
 let currentUserId: string | null = null;
 
-/** Set by the app once it knows whether any user accounts are configured. */
-let accountsExist = false;
+/** True once the master password has been entered in this session. */
+let ownerAuthenticated = false;
 
-export function setAccountsExist(value: boolean): void {
-  accountsExist = value;
+export function setOwnerAuthenticated(value: boolean): void {
+  ownerAuthenticated = value;
+  if (value) {
+    // Unlocking starts as the owner; a staff sign-in replaces this.
+    currentUserId = null;
+    currentRole = 'admin';
+  }
+}
+
+export function isOwnerSession(): boolean {
+  return ownerAuthenticated && currentUserId === null;
 }
 
 export function setCurrentUser(id: string | null, role: Role | null): void {
@@ -132,11 +150,22 @@ export function getCurrentUserId(): string | null {
   return currentUserId;
 }
 
-/** The active role, or null when the session is not authenticated. */
+/** The active role, or null when the session is not authenticated at all. */
 export function getCurrentRole(): Role | null {
-  if (currentRole) return currentRole;
-  // No accounts configured => single-operator install, full access.
-  return accountsExist ? null : 'admin';
+  return currentRole;
+}
+
+/** Drop any staff identity and return to the owner session. */
+export function returnToOwner(): void {
+  currentUserId = null;
+  currentRole = ownerAuthenticated ? 'admin' : null;
+}
+
+/** Clear everything (called when the app locks). */
+export function clearSession(): void {
+  ownerAuthenticated = false;
+  currentUserId = null;
+  currentRole = null;
 }
 
 export function assertAllowed(channel: string): void {

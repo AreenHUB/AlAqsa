@@ -7,6 +7,7 @@ import { useI18n } from './i18n/I18nContext';
 import { useToast } from './components/ui';
 import { GlobalSearch } from './components/GlobalSearch';
 import { AppMenuBar } from './components/AppMenuBar';
+import { SessionMenu } from './components/SessionMenu';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { ClientsScreen } from './screens/ClientsScreen';
 import { ClientDetailScreen } from './screens/ClientDetailScreen';
@@ -39,6 +40,9 @@ export function Shell({ onLock }: { onLock: () => void }) {
     () => (localStorage.getItem('alaqsa.theme') as 'light' | 'dark') ?? 'light',
   );
   const [collapsed, setCollapsed] = useState(false);
+  // Bumped when the signed-in user changes, so screens refetch under the new
+  // role (a technician must stop seeing what an admin could).
+  const [sessionVersion, setSessionVersion] = useState(0);
 
   // Apply + persist theme.
   useEffect(() => {
@@ -211,6 +215,7 @@ export function Shell({ onLock }: { onLock: () => void }) {
           </button>
 
           <div className="row gap-6">
+            <SessionMenu onChanged={() => setSessionVersion((v) => v + 1)} />
             <button
               className="btn btn-ghost btn-sm"
               onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
@@ -239,7 +244,7 @@ export function Shell({ onLock }: { onLock: () => void }) {
             reset every screen to its first tab after each save/delete, which
             made adding several documents in a row painful. Screens refresh
             their own data instead. */}
-        <main style={{ flex: 1, overflow: 'auto', padding: 24 }}>
+        <main style={{ flex: 1, overflow: 'auto', padding: 24 }} key={sessionVersion}>
           {route.name === 'dashboard' && <DashboardScreen navigate={navigate} />}
           {route.name === 'clients' && <ClientsScreen navigate={navigate} />}
           {route.name === 'client' && (

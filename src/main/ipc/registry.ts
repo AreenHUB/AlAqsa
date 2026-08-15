@@ -27,7 +27,8 @@ import { APP_NAME, APP_VERSION, AUTHOR } from '@shared/constants';
 import { seedDemoData } from '../services/demoData';
 import { staffRepo, notesRepo } from '../db/repositories/staffRepo';
 import {
-  assertAllowed, setCurrentUser, getCurrentRole, getCurrentUserId, setAccountsExist,
+  assertAllowed, setCurrentUser, getCurrentRole, getCurrentUserId,
+  setOwnerAuthenticated, returnToOwner, clearSession, isOwnerSession,
 } from '../security/permissions';
 import { generateVisitPdf, generateAgreementPdf, generateInvoicePdf } from '../services/pdfService';
 import { exportClientExcel, exportAllExcel, importInventoryExcel } from '../services/excelService';
@@ -114,17 +115,6 @@ function requireUnlocked(ctx: AppContext): void {
   }
 }
 
-/** Recompute whether any active accounts exist (drives the auth requirement). */
-function refreshAccountsExist(): void {
-  try {
-    const n = (getDb().prepare('SELECT count(*) AS c FROM users WHERE active = 1')
-      .get() as { c: number }).c;
-    setAccountsExist(n > 0);
-  } catch {
-    // DB not open yet — the flag is refreshed again after unlock.
-  }
-}
-
 function notifyDataChanged(ctx: AppContext, entity: string): void {
   ctx.mainWindow?.webContents.send('event:data-changed', entity);
 }
@@ -143,7 +133,8 @@ export function registerIpcHandlers(ctx: AppContext): void {
     const { recoveryKey } = ctx.secure.firstRunSetup(password);
     saveConfig({ language });
     openDatabase(ctx.secure.getSqlcipherKey());
-    refreshAccountsExist();
+    // Whoever sets the master password is the owner of this installation.
+    setOwnerAuthenticated(true);
     auditRepo.log('setup', 'app', undefined, 'First run setup completed');
     return { recoveryKey };
   });
@@ -151,7 +142,8 @@ export function registerIpcHandlers(ctx: AppContext): void {
   handle('auth:unlock', (password: string) => {
     if (!ctx.secure.unlockWithPassword(password)) throw new Error('WRONG_PASSWORD');
     openDatabase(ctx.secure.getSqlcipherKey());
-    refreshAccountsExist();
+    // The master password decrypts the database, so holding it IS ownership.
+    setOwnerAuthenticated(true);
     auditRepo.log('unlock', 'app', undefined, 'Unlocked with password');
     return {
       initialized: true, unlocked: true,
@@ -162,7 +154,7 @@ export function registerIpcHandlers(ctx: AppContext): void {
   handle('auth:unlockWithRecovery', (recoveryKey: string) => {
     if (!ctx.secure.unlockWithRecovery(recoveryKey)) throw new Error('WRONG_RECOVERY_KEY');
     openDatabase(ctx.secure.getSqlcipherKey());
-    refreshAccountsExist();
+    setOwnerAuthenticated(true);
     auditRepo.log('unlock', 'app', undefined, 'Unlocked with RECOVERY KEY');
     return {
       initialized: true, unlocked: true,
@@ -185,8 +177,8 @@ export function registerIpcHandlers(ctx: AppContext): void {
   });
 
   handle('auth:lock', () => {
-    // Clear the session identity too, so re-unlocking cannot inherit a role.
-    setCurrentUser(null, null);
+    // Clear the whole session, including ownership.
+    clearSession();
     ctx.secure.lock();
     closeDatabase();
     ctx.mainWindow?.webContents.send('event:locked');
@@ -206,9 +198,6 @@ export function registerIpcHandlers(ctx: AppContext): void {
     const rows = getDb().prepare(
       'SELECT id, username, display_name, role FROM users WHERE active = 1 ORDER BY display_name',
     ).all() as any[];
-    // Keep the permission layer's view of "are there accounts?" current: it
-    // decides whether an unauthenticated session is allowed at all.
-    setAccountsExist(rows.length > 0);
     return rows.map((r) => ({
       id: r.id, username: r.username, displayName: r.display_name, role: r.role,
     }));
@@ -234,14 +223,17 @@ export function registerIpcHandlers(ctx: AppContext): void {
 
   handle('auth:signOut', () => {
     const id = getCurrentUserId();
-    setCurrentUser(null, null);
+    // Back to the owner session (the master password is still held), not to a
+    // permission-less state — the owner never signed out of the machine.
+    returnToOwner();
     auditRepo.log('sign_out', 'user', id ?? undefined);
     return null;
   });
 
   handle('auth:currentUser', () => {
     const id = getCurrentUserId();
-    if (!id) return null;
+    // No staff id => the owner session established by the master password.
+    if (!id) return isOwnerSession() ? { id: null, username: 'owner', displayName: '', role: 'admin' as const, isOwner: true } : null;
     const row = getDb().prepare(
       'SELECT id, username, display_name, role FROM users WHERE id = ?',
     ).get(id) as any;
@@ -635,11 +627,9 @@ export function registerIpcHandlers(ctx: AppContext): void {
     if (!exists && !password) throw new Error('PASSWORD_REQUIRED');
     if (password && password.length < 4) throw new Error('PASSWORD_TOO_SHORT');
 
-    // The FIRST account must be an administrator. Once accounts exist, sign-in
-    // becomes mandatory — creating only a technician would leave nobody able
-    // to reach Settings and undo it.
-    const existingCount = (db.prepare('SELECT count(*) AS c FROM users').get() as { c: number }).c;
-    const role = existingCount === 0 ? 'admin' : (input.role ?? 'viewer');
+    // No need to force an admin account: the owner always has admin rights via
+    // the master password, so the shop can never lock itself out of Settings.
+    const role = input.role ?? 'viewer';
 
     const hash = password ? bcrypt.hashSync(password, 10) : null;
     if (exists) {
@@ -653,25 +643,16 @@ export function registerIpcHandlers(ctx: AppContext): void {
         .run(id, username, input.displayName, role, hash, input.active === false ? 0 : 1, new Date().toISOString());
     }
     auditRepo.log('save', 'user', id, input.username);
-    refreshAccountsExist();
     const r: any = db.prepare('SELECT id, username, display_name, role, active, created_at FROM users WHERE id = ?').get(id);
     return { id: r.id, username: r.username, displayName: r.display_name, role: r.role, active: !!r.active, createdAt: r.created_at };
   });
   handle('users:remove', (id: string) => {
     requireUnlocked(ctx);
-    // Removing the only administrator would leave nobody able to manage the
-    // app (settings, users, backups) — refuse rather than brick the install.
+    // Safe to remove any account: the owner retains admin through the master
+    // password, so deleting staff can never lock the shop out.
     const db = getDb();
-    const target = db.prepare('SELECT role FROM users WHERE id = ?').get(id) as { role: string } | undefined;
-    if (target?.role === 'admin') {
-      const admins = (db.prepare(
-        "SELECT count(*) AS c FROM users WHERE role = 'admin' AND active = 1",
-      ).get() as { c: number }).c;
-      if (admins <= 1) throw new Error('CANNOT_REMOVE_LAST_ADMIN');
-    }
     db.prepare('DELETE FROM users WHERE id = ?').run(id);
     auditRepo.log('delete', 'user', id);
-    refreshAccountsExist();
     return null;
   });
 

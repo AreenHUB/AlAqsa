@@ -126,6 +126,11 @@ export const translations = {
       lockedOutBody: 'كل حسابات المديرين محذوفة أو معطّلة، فلا يمكن الدخول للإعدادات. استعد نسخة احتياطية أو تواصل مع المطوّر.',
       signedInAs: 'الجلسة الحالية',
       signOut: 'تسجيل خروج المستخدم',
+      owner: 'المالك',
+      backToOwner: 'العودة إلى المالك',
+      noStaffYet: 'لم تُضف حسابات موظفين بعد. أضفها من الإعدادات ← المستخدمون.',
+      staffPasswordHint: 'أدخل كلمة سر هذا الحساب — لا حاجة لكلمة السر الرئيسية.',
+      switchUser: 'تبديل المستخدم',
     },
 
     // License
@@ -748,6 +753,11 @@ export const translations = {
       lockedOutBody: 'Every admin account has been deleted or deactivated, so Settings cannot be reached. Restore a backup or contact the developer.',
       signedInAs: 'Signed in as',
       signOut: 'Sign out user',
+      owner: 'Owner',
+      backToOwner: 'Back to owner',
+      noStaffYet: 'No staff accounts yet. Add them in Settings → Users.',
+      staffPasswordHint: 'Enter this account’s password — the master password is not needed.',
+      switchUser: 'Switch user',
     },
 
     license: {
