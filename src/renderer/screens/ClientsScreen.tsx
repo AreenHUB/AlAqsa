@@ -26,7 +26,6 @@ export function ClientsScreen({ navigate }: { navigate: (r: Route) => void }) {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [labelFilter, setLabelFilter] = useState('');
-  const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [view, setView] = useState<ViewMode>(
     () => (localStorage.getItem('alaqsa.clientsView') as ViewMode) ?? 'table',
   );
@@ -46,7 +45,6 @@ export function ClientsScreen({ navigate }: { navigate: (r: Route) => void }) {
         search: search || undefined,
         type: typeFilter || undefined,
         statusLabelId: labelFilter || undefined,
-        flaggedOnly: flaggedOnly || undefined,
         sortBy, sortDir, limit: 500,
       }),
       window.alaqsa.statusLabels.list(),
@@ -63,7 +61,7 @@ export function ClientsScreen({ navigate }: { navigate: (r: Route) => void }) {
     }
     if (lbl.ok) setLabels(lbl.data);
     setLoading(false);
-  }, [search, typeFilter, labelFilter, flaggedOnly, sortBy, sortDir]);
+  }, [search, typeFilter, labelFilter, sortBy, sortDir]);
 
   useEffect(() => {
     const id = window.setTimeout(() => void load(), 220);
@@ -96,9 +94,9 @@ export function ClientsScreen({ navigate }: { navigate: (r: Route) => void }) {
   const sortIcon = (col: string) => (sortBy === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '');
 
   const clearFilters = () => {
-    setSearch(''); setTypeFilter(''); setLabelFilter(''); setFlaggedOnly(false);
+    setSearch(''); setTypeFilter(''); setLabelFilter('');
   };
-  const hasFilters = !!(search || typeFilter || labelFilter || flaggedOnly);
+  const hasFilters = !!(search || typeFilter || labelFilter);
 
   return (
     <div className="col gap-16 fade-in">
@@ -140,12 +138,9 @@ export function ClientsScreen({ navigate }: { navigate: (r: Route) => void }) {
               options={labels.map((l) => ({ value: l.id, label: lang === 'ar' ? l.name_ar : l.name_en }))}
             />
           </div>
-          <button
-            className={`btn ${flaggedOnly ? 'btn-danger' : 'btn-outline'}`}
-            onClick={() => setFlaggedOnly((v) => !v)}
-          >
-            🔴 {t.clients.flagged}
-          </button>
+          {/* The flagged-clients toggle was removed: a flag is a warning that
+              belongs on the row itself (red highlight), not a filter people
+              had to remember to switch off. Status remains filterable. */}
           {hasFilters && (
             <button className="btn btn-ghost" onClick={clearFilters}>✕ {t.common.clearFilters}</button>
           )}
