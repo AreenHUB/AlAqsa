@@ -138,13 +138,12 @@ export function SignInScreen({
           </button>
         ))}
 
-        <hr className="divider" />
-
-        <button className="btn btn-ghost btn-sm" onClick={onSkip}>
-          {t.signIn.continueAsOwner}
-        </button>
-        <p className="tiny faint text-center" style={{ lineHeight: 1.6 }}>
-          {t.signIn.ownerHint}
+        {/* There is deliberately NO "continue as owner" escape hatch. It let
+            anyone holding the master password act as an administrator without
+            knowing an account password, which made the whole role system
+            pointless. The owner signs in with their own admin account. */}
+        <p className="tiny faint text-center" style={{ lineHeight: 1.7, marginTop: 4 }}>
+          {t.signIn.mustSignIn}
         </p>
       </div>
     </AuthShell>

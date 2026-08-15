@@ -104,13 +104,24 @@ export function capabilityFor(channel: string): Capability {
 }
 
 /**
- * The signed-in user for this session. When no user has signed in (the common
- * single-operator case, where the master password IS the gate) we treat the
- * session as admin — otherwise the app would lock itself out of its own
- * settings on a fresh install.
+ * The signed-in user for this session.
+ *
+ * SECURITY: when accounts exist, an unauthenticated session has NO role and is
+ * refused. Falling back to 'admin' here (as an earlier version did) meant
+ * anyone holding the master password could press "continue as owner" and act
+ * as an administrator without knowing any account password — the role system
+ * was decorative. The fallback now applies only while no accounts exist at
+ * all, which is the genuine single-operator case on a fresh install.
  */
 let currentRole: Role | null = null;
 let currentUserId: string | null = null;
+
+/** Set by the app once it knows whether any user accounts are configured. */
+let accountsExist = false;
+
+export function setAccountsExist(value: boolean): void {
+  accountsExist = value;
+}
 
 export function setCurrentUser(id: string | null, role: Role | null): void {
   currentUserId = id;
@@ -121,13 +132,17 @@ export function getCurrentUserId(): string | null {
   return currentUserId;
 }
 
-export function getCurrentRole(): Role {
-  return currentRole ?? 'admin';
+/** The active role, or null when the session is not authenticated. */
+export function getCurrentRole(): Role | null {
+  if (currentRole) return currentRole;
+  // No accounts configured => single-operator install, full access.
+  return accountsExist ? null : 'admin';
 }
 
 export function assertAllowed(channel: string): void {
-  const cap = capabilityFor(channel);
-  if (!roleHas(getCurrentRole(), cap)) {
+  const role = getCurrentRole();
+  if (!role) throw new Error('NOT_SIGNED_IN');
+  if (!roleHas(role, capabilityFor(channel))) {
     throw new Error('FORBIDDEN');
   }
 }

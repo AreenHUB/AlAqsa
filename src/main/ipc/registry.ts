@@ -26,7 +26,9 @@ import { dataDir, filesDir, backupsDir, reportsDir, secureStorePath, dbPath } fr
 import { APP_NAME, APP_VERSION, AUTHOR } from '@shared/constants';
 import { seedDemoData } from '../services/demoData';
 import { staffRepo, notesRepo } from '../db/repositories/staffRepo';
-import { assertAllowed, setCurrentUser, getCurrentRole, getCurrentUserId } from '../security/permissions';
+import {
+  assertAllowed, setCurrentUser, getCurrentRole, getCurrentUserId, setAccountsExist,
+} from '../security/permissions';
 import { generateVisitPdf, generateAgreementPdf, generateInvoicePdf } from '../services/pdfService';
 import { exportClientExcel, exportAllExcel, importInventoryExcel } from '../services/excelService';
 import { shareViaWhatsApp, shareTextViaWhatsApp, printFile } from '../services/shareService';
@@ -53,6 +55,9 @@ function classifyError(e: unknown): { code: string; error: string } {
     'NO_LOCATION', 'FILE_NOT_FOUND', 'INVALID_LICENSE',
     'VISIT_NOT_FOUND', 'CLIENT_NOT_FOUND', 'INVOICE_NOT_FOUND',
     'ARABIC_FONTS_NOT_FOUND', 'NO_SHEET', 'INVALID_DATA_URL',
+    'NOT_SIGNED_IN', 'USERNAME_TAKEN', 'USERNAME_REQUIRED',
+    'PASSWORD_REQUIRED', 'USER_NOT_FOUND', 'USER_HAS_NO_PASSWORD',
+    'CANNOT_REMOVE_LAST_ADMIN',
   ];
   if (known.includes(raw)) return { code: raw, error: raw };
 
@@ -109,6 +114,17 @@ function requireUnlocked(ctx: AppContext): void {
   }
 }
 
+/** Recompute whether any active accounts exist (drives the auth requirement). */
+function refreshAccountsExist(): void {
+  try {
+    const n = (getDb().prepare('SELECT count(*) AS c FROM users WHERE active = 1')
+      .get() as { c: number }).c;
+    setAccountsExist(n > 0);
+  } catch {
+    // DB not open yet — the flag is refreshed again after unlock.
+  }
+}
+
 function notifyDataChanged(ctx: AppContext, entity: string): void {
   ctx.mainWindow?.webContents.send('event:data-changed', entity);
 }
@@ -127,6 +143,7 @@ export function registerIpcHandlers(ctx: AppContext): void {
     const { recoveryKey } = ctx.secure.firstRunSetup(password);
     saveConfig({ language });
     openDatabase(ctx.secure.getSqlcipherKey());
+    refreshAccountsExist();
     auditRepo.log('setup', 'app', undefined, 'First run setup completed');
     return { recoveryKey };
   });
@@ -134,6 +151,7 @@ export function registerIpcHandlers(ctx: AppContext): void {
   handle('auth:unlock', (password: string) => {
     if (!ctx.secure.unlockWithPassword(password)) throw new Error('WRONG_PASSWORD');
     openDatabase(ctx.secure.getSqlcipherKey());
+    refreshAccountsExist();
     auditRepo.log('unlock', 'app', undefined, 'Unlocked with password');
     return {
       initialized: true, unlocked: true,
@@ -144,6 +162,7 @@ export function registerIpcHandlers(ctx: AppContext): void {
   handle('auth:unlockWithRecovery', (recoveryKey: string) => {
     if (!ctx.secure.unlockWithRecovery(recoveryKey)) throw new Error('WRONG_RECOVERY_KEY');
     openDatabase(ctx.secure.getSqlcipherKey());
+    refreshAccountsExist();
     auditRepo.log('unlock', 'app', undefined, 'Unlocked with RECOVERY KEY');
     return {
       initialized: true, unlocked: true,
@@ -166,6 +185,8 @@ export function registerIpcHandlers(ctx: AppContext): void {
   });
 
   handle('auth:lock', () => {
+    // Clear the session identity too, so re-unlocking cannot inherit a role.
+    setCurrentUser(null, null);
     ctx.secure.lock();
     closeDatabase();
     ctx.mainWindow?.webContents.send('event:locked');
@@ -182,9 +203,13 @@ export function registerIpcHandlers(ctx: AppContext): void {
    */
   handle('auth:listUsers', () => {
     requireUnlocked(ctx);
-    return getDb().prepare(
+    const rows = getDb().prepare(
       'SELECT id, username, display_name, role FROM users WHERE active = 1 ORDER BY display_name',
-    ).all().map((r: any) => ({
+    ).all() as any[];
+    // Keep the permission layer's view of "are there accounts?" current: it
+    // decides whether an unauthenticated session is allowed at all.
+    setAccountsExist(rows.length > 0);
+    return rows.map((r) => ({
       id: r.id, username: r.username, displayName: r.display_name, role: r.role,
     }));
   });
@@ -594,26 +619,59 @@ export function registerIpcHandlers(ctx: AppContext): void {
     const db = getDb();
     const { randomUUID } = require('node:crypto') as typeof import('node:crypto');
     const id = input.id ?? randomUUID();
-    const hash = password ? bcrypt.hashSync(password, 10) : null;
     const exists = input.id && db.prepare('SELECT 1 FROM users WHERE id = ?').get(input.id);
+
+    const username = String(input.username ?? '').trim();
+    if (!username) throw new Error('USERNAME_REQUIRED');
+
+    // usernames are UNIQUE in the schema; a clash used to surface as a raw
+    // SQLite error and the new account simply never appeared in the list.
+    const clash = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE')
+      .get(username) as { id: string } | undefined;
+    if (clash && clash.id !== id) throw new Error('USERNAME_TAKEN');
+
+    // An account with no password can never sign in, so it would look like it
+    // had vanished. Require one when creating.
+    if (!exists && !password) throw new Error('PASSWORD_REQUIRED');
+    if (password && password.length < 4) throw new Error('PASSWORD_TOO_SHORT');
+
+    // The FIRST account must be an administrator. Once accounts exist, sign-in
+    // becomes mandatory — creating only a technician would leave nobody able
+    // to reach Settings and undo it.
+    const existingCount = (db.prepare('SELECT count(*) AS c FROM users').get() as { c: number }).c;
+    const role = existingCount === 0 ? 'admin' : (input.role ?? 'viewer');
+
+    const hash = password ? bcrypt.hashSync(password, 10) : null;
     if (exists) {
       db.prepare(`UPDATE users SET username=?, display_name=?, role=?, active=?
         ${hash ? ', pass_hash=?' : ''} WHERE id=?`)
         .run(...(hash
-          ? [input.username, input.displayName, input.role, input.active ? 1 : 0, hash, id]
-          : [input.username, input.displayName, input.role, input.active ? 1 : 0, id]));
+          ? [username, input.displayName, input.role, input.active ? 1 : 0, hash, id]
+          : [username, input.displayName, input.role, input.active ? 1 : 0, id]));
     } else {
       db.prepare('INSERT INTO users (id, username, display_name, role, pass_hash, active, created_at) VALUES (?,?,?,?,?,?,?)')
-        .run(id, input.username, input.displayName, input.role ?? 'viewer', hash, input.active === false ? 0 : 1, new Date().toISOString());
+        .run(id, username, input.displayName, role, hash, input.active === false ? 0 : 1, new Date().toISOString());
     }
     auditRepo.log('save', 'user', id, input.username);
+    refreshAccountsExist();
     const r: any = db.prepare('SELECT id, username, display_name, role, active, created_at FROM users WHERE id = ?').get(id);
     return { id: r.id, username: r.username, displayName: r.display_name, role: r.role, active: !!r.active, createdAt: r.created_at };
   });
   handle('users:remove', (id: string) => {
     requireUnlocked(ctx);
-    getDb().prepare('DELETE FROM users WHERE id = ?').run(id);
+    // Removing the only administrator would leave nobody able to manage the
+    // app (settings, users, backups) — refuse rather than brick the install.
+    const db = getDb();
+    const target = db.prepare('SELECT role FROM users WHERE id = ?').get(id) as { role: string } | undefined;
+    if (target?.role === 'admin') {
+      const admins = (db.prepare(
+        "SELECT count(*) AS c FROM users WHERE role = 'admin' AND active = 1",
+      ).get() as { c: number }).c;
+      if (admins <= 1) throw new Error('CANNOT_REMOVE_LAST_ADMIN');
+    }
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
     auditRepo.log('delete', 'user', id);
+    refreshAccountsExist();
     return null;
   });
 
