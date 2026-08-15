@@ -113,6 +113,20 @@ export const translations = {
       regenerateWarning: 'سيتم إبطال المفتاح القديم فوراً ولن يعمل بعد الآن.',
     },
 
+    // Sign-in (who are you?)
+    signIn: {
+      title: 'من أنت؟',
+      subtitle: 'اختر اسمك لتحديد صلاحياتك في التطبيق',
+      password: 'كلمة سر المستخدم',
+      enter: 'دخول',
+      changeUser: 'اختيار مستخدم آخر',
+      continueAsOwner: 'متابعة كمالك (صلاحيات كاملة)',
+      ownerHint: 'اختر هذا إذا كنت صاحب المحل. المستخدمون الآخرون يدخلون بأسمائهم لتُطبَّق صلاحياتهم.',
+      noPasswordSet: 'هذا المستخدم بلا كلمة سر — عيّن له كلمة سر من الإعدادات أولاً.',
+      signedInAs: 'الجلسة الحالية',
+      signOut: 'تسجيل خروج المستخدم',
+    },
+
     // License
     license: {
       title: 'الترخيص',
@@ -712,6 +726,19 @@ export const translations = {
       newPassword: 'New password',
       regenerateRecovery: 'Generate new recovery key',
       regenerateWarning: 'The old key will be revoked immediately and stop working.',
+    },
+
+    signIn: {
+      title: 'Who are you?',
+      subtitle: 'Pick your name so the right permissions apply',
+      password: 'User password',
+      enter: 'Sign in',
+      changeUser: 'Choose another user',
+      continueAsOwner: 'Continue as owner (full access)',
+      ownerHint: 'Choose this if you are the shop owner. Other users sign in by name so their role applies.',
+      noPasswordSet: 'This user has no password — set one in Settings first.',
+      signedInAs: 'Signed in as',
+      signOut: 'Sign out user',
     },
 
     license: {

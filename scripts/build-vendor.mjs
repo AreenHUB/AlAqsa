@@ -19,7 +19,7 @@
 // ============================================================================
 
 import { execFileSync } from 'node:child_process';
-import { rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { rmSync, mkdirSync, writeFileSync, readFileSync, existsSync, cpSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -42,8 +42,16 @@ export function buildVendor() {
   rmSync(vendorDir, { recursive: true, force: true });
   mkdirSync(vendorDir, { recursive: true });
 
+  // npm insists on creating "node_modules". electron-builder prunes any
+  // directory with that name, which previously stripped this whole tree from
+  // the installer (only vendor/package.json survived). So npm runs in a temp
+  // directory and the result is copied to a neutral name.
+  const stagingDir = path.join(root, 'dist', '.vendor-staging');
+  rmSync(stagingDir, { recursive: true, force: true });
+  mkdirSync(stagingDir, { recursive: true });
+
   writeFileSync(
-    path.join(vendorDir, 'package.json'),
+    path.join(stagingDir, 'package.json'),
     JSON.stringify({
       name: 'alaqsa-vendor',
       version: '1.0.0',
@@ -61,7 +69,11 @@ export function buildVendor() {
     '--no-fund',
     '--ignore-scripts',   // nothing here needs a build step
     '--silent',
-  ], { cwd: vendorDir, stdio: 'inherit', shell: process.platform === 'win32' });
+  ], { cwd: stagingDir, stdio: 'inherit', shell: process.platform === 'win32' });
+
+  const shipped = path.join(vendorDir, 'pkgs');
+  cpSync(path.join(stagingDir, 'node_modules'), shipped, { recursive: true });
+  rmSync(stagingDir, { recursive: true, force: true });
 
   // Sanity check: the packages that broke previous builds must be present.
   const mustExist = [
@@ -70,7 +82,7 @@ export function buildVendor() {
     'call-bind-apply-helpers/index.js',
   ];
   for (const rel of mustExist) {
-    if (!existsSync(path.join(vendorDir, 'node_modules', rel))) {
+    if (!existsSync(path.join(shipped, rel))) {
       throw new Error(`vendor tree is incomplete: missing ${rel}`);
     }
   }

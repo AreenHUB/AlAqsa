@@ -11,7 +11,7 @@
 
 import { Notification } from 'electron';
 import type { AppContext } from '../main';
-import { remindersRepo, camLicenseRepo, invoicesRepo } from '../db/repositories/miscRepo';
+import { remindersRepo, camLicenseRepo, invoicesRepo, settingsRepo } from '../db/repositories/miscRepo';
 import { devicesRepo } from '../db/repositories/devicesRepo';
 import { getDb } from '../db/database';
 import { clientsRepo } from '../db/repositories/clientsRepo';
@@ -101,13 +101,31 @@ function syncDerivedReminders(): void {
   }
 
   // Auto-flag clients with overdue invoices (red warning for the team).
+  //
+  // This deliberately flags a client only ONCE. Re-applying it on every hourly
+  // pass meant a flag cleared by hand reappeared minutes later, and the reason
+  // text grew a duplicate line each time. A record of the automatic flag is
+  // kept in settings so the user's decision to clear it is respected.
+  const AUTO_FLAG_MARK = 'فاتورة متأخرة عن تاريخ الاستحقاق (تلقائي)';
+  const flaggedBefore = new Set(
+    JSON.parse(settingsRepo.get('autoFlaggedClients') ?? '[]') as string[],
+  );
+
+  let changed = false;
   for (const clientId of invoicesRepo.overdueClientIds()) {
+    if (flaggedBefore.has(clientId)) continue; // already handled once
     const c = clientsRepo.get(clientId);
     if (c && !c.isFlagged) {
       clientsRepo.update(clientId, {
         isFlagged: true,
-        flagReason: (c.flagReason ? c.flagReason + ' | ' : '') + 'فاتورة متأخرة عن تاريخ الاستحقاق (تلقائي)',
+        flagReason: c.flagReason ? `${c.flagReason} | ${AUTO_FLAG_MARK}` : AUTO_FLAG_MARK,
       });
     }
+    flaggedBefore.add(clientId);
+    changed = true;
+  }
+
+  if (changed) {
+    settingsRepo.set('autoFlaggedClients', JSON.stringify([...flaggedBefore]));
   }
 }

@@ -46,6 +46,13 @@ export type LicenseState =
   | { status: 'revoked' }
   | { status: 'missing' };
 
+export interface SignInUser {
+  id: string;
+  username: string;
+  displayName: string;
+  role: Role;
+}
+
 export interface FirstRunSetupResult {
   recoveryKey: string; // shown ONCE
 }
@@ -94,6 +101,11 @@ export interface IpcApi {
     changePassword(oldPw: string, newPw: string): Promise<Result<null>>;
     regenerateRecoveryKey(password: string): Promise<Result<{ recoveryKey: string }>>;
     lock(): Promise<Result<null>>;
+    /** Users available to sign in as (empty => single-operator mode). */
+    listUsers(): Promise<Result<SignInUser[]>>;
+    signIn(userId: string, password: string): Promise<Result<SignInUser>>;
+    signOut(): Promise<Result<null>>;
+    currentUser(): Promise<Result<SignInUser | null>>;
   };
   license: {
     state(): Promise<Result<LicenseState>>;

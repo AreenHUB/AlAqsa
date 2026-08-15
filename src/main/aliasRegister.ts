@@ -16,10 +16,11 @@ const sharedDir = path.join(__dirname, '..', 'shared');
 /**
  * Packages that stay outside the bundle (pdfmake reads asset files relative to
  * its own location, so it cannot be inlined). npm installs them into
- * dist/vendor/node_modules at build time; this makes `require('pdfmake')`
- * resolve there, with npm's own nesting intact.
+ * dist/vendor/pkgs at build time (not "node_modules" — electron-builder
+ * prunes any folder with that name). This makes `require('pdfmake')` resolve
+ * there, with npm's own nesting intact.
  */
-const VENDOR_DIR = path.join(__dirname, '..', 'vendor', 'node_modules');
+const VENDOR_DIR = path.join(__dirname, '..', 'vendor', 'pkgs');
 
 type ResolveFilename = (
   request: string,
@@ -31,22 +32,32 @@ type ResolveFilename = (
 const moduleInternals = Module as unknown as { _resolveFilename: ResolveFilename };
 const original = moduleInternals._resolveFilename;
 
+/**
+ * Teach Node that dist/vendor/pkgs is a module directory.
+ *
+ * Joining the vendor root onto the request (the previous approach) resolved
+ * only top-level packages: a nested dependency such as lazystream's own
+ * readable-stream was never found, because that lookup walks
+ * `<pkg>/node_modules` — which is what _nodeModulePaths produces. Appending
+ * the vendor directory to that candidate list lets Node's own algorithm do the
+ * work, nesting and all.
+ */
+const nodeModulePaths = (Module as unknown as {
+  _nodeModulePaths: (from: string) => string[];
+})._nodeModulePaths;
+
+(Module as unknown as { _nodeModulePaths: (from: string) => string[] })
+  ._nodeModulePaths = function (from: string): string[] {
+    const paths = nodeModulePaths.call(this, from);
+    // Packages inside the vendor tree resolve their own deps from it too.
+    return paths.includes(VENDOR_DIR) ? paths : [...paths, VENDOR_DIR];
+  };
+
 moduleInternals._resolveFilename = function (request, parent, isMain, options) {
   if (request.startsWith(ALIAS_PREFIX)) {
     const resolved = path.join(sharedDir, request.slice(ALIAS_PREFIX.length));
     return original.call(this, resolved, parent, isMain, options);
   }
-
-  // Bare specifier (not relative/absolute): try dist/vendor before the normal
-  // lookup so the copied trees are used in the packaged app.
-  if (!request.startsWith('.') && !path.isAbsolute(request)) {
-    try {
-      return original.call(this, path.join(VENDOR_DIR, request), parent, isMain, options);
-    } catch {
-      // Not vendored — fall through to the standard resolution below.
-    }
-  }
-
   return original.call(this, request, parent, isMain, options);
 };
 

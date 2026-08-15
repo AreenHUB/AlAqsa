@@ -63,6 +63,20 @@ export function Shell({ onLock }: { onLock: () => void }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // If the licence lapses while the app is open, every data call starts
+  // failing with LICENSE_INVALID. Rather than let the user hit silent errors
+  // on every screen, send them back to the licence gate immediately.
+  useEffect(() => {
+    let stopped = false;
+    const probe = async () => {
+      const res = await window.alaqsa.dashboard.stats();
+      if (!stopped && !res.ok && res.error === 'LICENSE_INVALID') onLock();
+    };
+    void probe();
+    const id = window.setInterval(probe, 60_000);
+    return () => { stopped = true; window.clearInterval(id); };
+  }, [onLock]);
+
   // Reminder notifications from the main process.
   useEffect(() => {
     return window.alaqsa.events.onReminderDue((r: Reminder) => {

@@ -26,7 +26,7 @@ import { dataDir, filesDir, backupsDir, reportsDir, secureStorePath, dbPath } fr
 import { APP_NAME, APP_VERSION, AUTHOR } from '@shared/constants';
 import { seedDemoData } from '../services/demoData';
 import { staffRepo, notesRepo } from '../db/repositories/staffRepo';
-import { assertAllowed, setCurrentUser, getCurrentRole } from '../security/permissions';
+import { assertAllowed, setCurrentUser, getCurrentRole, getCurrentUserId } from '../security/permissions';
 import { generateVisitPdf, generateAgreementPdf, generateInvoicePdf } from '../services/pdfService';
 import { exportClientExcel, exportAllExcel, importInventoryExcel } from '../services/excelService';
 import { shareViaWhatsApp, shareTextViaWhatsApp, printFile } from '../services/shareService';
@@ -86,6 +86,7 @@ const UNGATED = new Set([
   'auth:status', 'auth:unlock', 'auth:unlockWithRecovery',
   'auth:firstRunSetup', 'auth:lock', 'license:state', 'app:about',
   'settings:setLanguage', 'settings:setTheme', 'network:getMode',
+  'auth:listUsers', 'auth:signIn', 'auth:signOut', 'auth:currentUser',
 ]);
 
 function handle<T>(channel: string, fn: (...args: any[]) => T | Promise<T>): void {
@@ -169,6 +170,57 @@ export function registerIpcHandlers(ctx: AppContext): void {
     closeDatabase();
     ctx.mainWindow?.webContents.send('event:locked');
     return null;
+  });
+
+  /**
+   * Sign in as one of the configured users.
+   *
+   * The master password unlocks the encrypted database; this is a second,
+   * separate step that decides WHAT the signed-in person may do. When no users
+   * are configured the app stays in single-operator mode (admin), so an
+   * existing installation is unaffected.
+   */
+  handle('auth:listUsers', () => {
+    requireUnlocked(ctx);
+    return getDb().prepare(
+      'SELECT id, username, display_name, role FROM users WHERE active = 1 ORDER BY display_name',
+    ).all().map((r: any) => ({
+      id: r.id, username: r.username, displayName: r.display_name, role: r.role,
+    }));
+  });
+
+  handle('auth:signIn', (userId: string, password: string) => {
+    requireUnlocked(ctx);
+    const bcrypt = require('bcryptjs') as typeof import('bcryptjs');
+    const row = getDb().prepare(
+      'SELECT id, username, display_name, role, pass_hash, active FROM users WHERE id = ?',
+    ).get(userId) as any;
+
+    if (!row || !row.active) throw new Error('USER_NOT_FOUND');
+    // A user saved without a password cannot be signed in as; this avoids an
+    // empty password silently granting that user's role.
+    if (!row.pass_hash) throw new Error('USER_HAS_NO_PASSWORD');
+    if (!bcrypt.compareSync(password, row.pass_hash)) throw new Error('WRONG_PASSWORD');
+
+    setCurrentUser(row.id, row.role);
+    auditRepo.log('sign_in', 'user', row.id, row.username, row.id);
+    return { id: row.id, username: row.username, displayName: row.display_name, role: row.role };
+  });
+
+  handle('auth:signOut', () => {
+    const id = getCurrentUserId();
+    setCurrentUser(null, null);
+    auditRepo.log('sign_out', 'user', id ?? undefined);
+    return null;
+  });
+
+  handle('auth:currentUser', () => {
+    const id = getCurrentUserId();
+    if (!id) return null;
+    const row = getDb().prepare(
+      'SELECT id, username, display_name, role FROM users WHERE id = ?',
+    ).get(id) as any;
+    return row ? { id: row.id, username: row.username, displayName: row.display_name, role: row.role } : null;
   });
 
   // ---- license -----------------------------------------------------------
