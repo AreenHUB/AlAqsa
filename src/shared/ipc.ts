@@ -5,7 +5,7 @@
 import type {
   Client, Contact, Branch, Device, DocumentRecord, CameraLicense,
   Visit, InventoryItem, AmcContract, Invoice, Reminder, AppUser,
-  AuditEntry, StatusLabel, MediaRef, StaffMember, NoteEntry, Role,
+  AuditEntry, StatusLabel, MediaRef, StaffMember, NoteEntry, Role, StockUnit,
 } from './types';
 
 export interface StaffActivity {
@@ -57,6 +57,20 @@ export interface FirstRunSetupResult {
   recoveryKey: string; // shown ONCE
 }
 
+/**
+ * The answer to "what is this serial?".
+ *
+ * Both halves can be present: a unit that was sold to a client has a stock
+ * record AND an installed device. The caller uses `unit` to fill a new device
+ * form, and `device` to warn that the serial is already recorded elsewhere.
+ */
+export interface SerialLookup {
+  unit: StockUnit | null;
+  device: Device | null;
+  clientName?: string;
+  branchName?: string;
+}
+
 /** What the current session is allowed to do. */
 export interface SessionInfo {
   unlocked: boolean;
@@ -85,6 +99,8 @@ export interface GlobalSearchResult {
   branches: Branch[];
   devices: Device[];
   contacts: Contact[];
+  /** Units in the shop matching the term — usually a scanned serial. */
+  stockUnits: StockUnit[];
 }
 
 export interface DashboardStats {
@@ -183,7 +199,25 @@ export interface IpcApi {
     importExcel(sourcePath: string): Promise<Result<{
       imported: number; updated: number; skipped: number;
       negativeStock: number; headerRow: number;
+      kind?: 'products' | 'serials';
+      duplicateSerials?: number;
+      productsTouched?: number;
     }>>;
+  };
+  /** Individual units in the shop, each identified by its serial number. */
+  stock: {
+    /**
+     * Resolve a scanned or typed serial. Returns null when unknown; otherwise
+     * the shop unit and/or the already-installed device carrying that serial.
+     */
+    lookupSerial(serial: string): Promise<Result<SerialLookup | null>>;
+    list(q?: { search?: string; status?: string; limit?: number; offset?: number }):
+      Promise<Result<{ rows: StockUnit[]; total: number }>>;
+    get(id: string): Promise<Result<StockUnit | null>>;
+    counts(): Promise<Result<{ total: number; inStock: number; installed: number }>>;
+    upsert(input: Partial<StockUnit> & { serialNumber: string }): Promise<Result<StockUnit>>;
+    remove(id: string): Promise<Result<null>>;
+    returnToStock(id: string): Promise<Result<null>>;
   };
   amc: {
     listByClient(clientId: string): Promise<Result<AmcContract[]>>;

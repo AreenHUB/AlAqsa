@@ -110,14 +110,31 @@ export function DeviceFormModal({
     setSerial(code);
     if (!code) return;
 
-    const res = await window.alaqsa.devices.findBySerial(code);
-    if (res.ok && res.data) {
-      const found = res.data;
-      if (found.id !== device?.id) {
-        // Same serial on a different record: warn, but still show what we know.
-        setErrors((e) => ({ ...e, serial: t.devices.duplicateSerial }));
-        toast.warning(t.devices.duplicateSerial);
-      }
+    // One lookup answers both questions: is this unit sitting in the shop, and
+    // is this serial already recorded on a device somewhere?
+    const res = await window.alaqsa.stock.lookupSerial(code);
+    if (!res.ok || !res.data) {
+      setErrors((e) => { const { serial: _drop, ...rest } = e; return rest; });
+      toast.warning(t.devices.serialNotFound);
+      return;
+    }
+
+    const { unit, device: found, clientName, branchName } = res.data;
+
+    // An installed device wins: its details are the most specific, and the
+    // technician needs to be told the serial is already in use elsewhere.
+    if (found && found.id !== device?.id) {
+      setErrors((e) => ({ ...e, serial: t.devices.duplicateSerial }));
+      toast.warning(
+        clientName
+          ? `${t.devices.serialAlreadyAt} ${clientName}${branchName ? ` — ${branchName}` : ''}`
+          : t.devices.duplicateSerial,
+      );
+    } else {
+      setErrors((e) => { const { serial: _drop, ...rest } = e; return rest; });
+    }
+
+    if (found) {
       if (found.type) setType(found.type);
       if (found.manufacturer) setManufacturer(found.manufacturer);
       if (found.model) setModel(found.model);
@@ -125,22 +142,25 @@ export function DeviceFormModal({
       if (found.channels) setChannels(String(found.channels));
       if (found.capacity) setCapacity(found.capacity);
       if (found.firmware) setFirmware(found.firmware);
-      toast.success(t.devices.autofilledFromDevice);
-      return;
+      if (!unit) { toast.success(t.devices.autofilledFromDevice); return; }
     }
 
-    setErrors((e) => { const { serial: _drop, ...rest } = e; return rest; });
-
-    // Not a known device — try the shop inventory for a model match.
-    const stock = inventory.find(
-      (i) => (i.model && code.toUpperCase().includes(i.model.toUpperCase())),
-    );
-    if (stock) {
-      if (stock.type) setType(stock.type);
-      if (stock.manufacturer) setManufacturer(stock.manufacturer);
-      if (stock.model) setModel(stock.model);
-      setInventoryItemId(stock.id);
-      toast.success(t.devices.autofilledFromInventory);
+    // Fill from the shop unit: this is the "scan a box and the form completes
+    // itself" case the owner asked for.
+    if (unit) {
+      if (unit.type) setType(unit.type);
+      if (unit.manufacturer) setManufacturer(unit.manufacturer);
+      // The stock take carries one descriptive name per product; it is the
+      // most useful thing to put in the model field.
+      if (unit.itemName) setModel(unit.itemName);
+      if (unit.inventoryItemId) setInventoryItemId(unit.inventoryItemId);
+      // Everything the shop supplies is ours, by definition.
+      setSource('ours');
+      if (unit.status === 'installed' && !found) {
+        toast.warning(t.devices.unitAlreadyInstalled);
+      } else {
+        toast.success(t.devices.autofilledFromStock);
+      }
     }
   };
 

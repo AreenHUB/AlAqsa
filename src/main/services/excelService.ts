@@ -13,7 +13,9 @@ import { clientsRepo } from '../db/repositories/clientsRepo';
 import { branchesRepo } from '../db/repositories/branchesRepo';
 import { devicesRepo } from '../db/repositories/devicesRepo';
 import { visitsRepo } from '../db/repositories/visitsRepo';
-import { inventoryRepo, camLicenseRepo, invoicesRepo } from '../db/repositories/miscRepo';
+import {
+  inventoryRepo, camLicenseRepo, invoicesRepo, stockUnitsRepo, serialKey,
+} from '../db/repositories/miscRepo';
 import { getDb } from '../db/database';
 import { DEVICE_TYPES, CLIENT_TYPES, VISIT_TYPES } from '@shared/constants';
 
@@ -264,8 +266,16 @@ const INVENTORY_HEADERS: Record<string, string> = {
   'كميةالاخراجات': 'outQty', 'كمية الاخراجات': 'outQty', 'كميةالإخراجات': 'outQty',
   'كمية الشراء': 'purchaseQty', 'قيمة الشراء': 'purchaseValue',
   'الحد الأدنى': 'minQty', 'الحد الادنى': 'minQty',
+  // --- serial stock-take columns ---
+  // Present only in the by-serial export, where each row is one physical unit.
+  'الرقم التسلسلي': 'serial', 'الرقم المتسلسل': 'serial', 'السيريال': 'serial',
+  'serial': 'serial', 'serial number': 'serial', 'sn': 'serial', 's/n': 'serial',
+  'عمر البضاعة': 'ageDays', 'الصلاحية': 'expiry',
+  'ملاحظات الجهاز': 'unitNotes',
+  'اجمالي': 'lineTotal', 'الاجمالي': 'lineTotal', 'total': 'lineTotal',
   // row number column, recognised so it is never mistaken for data
   'الرقم': 'rowNo', '#': 'rowNo', 'no': 'rowNo', 'no.': 'rowNo',
+  'البند': 'rowNo',
 };
 
 /**
@@ -351,6 +361,141 @@ export interface InventoryImportResult {
   /** Rows whose computed stock was negative in the source file. */
   negativeStock: number;
   headerRow: number;
+  /** 'products' = one row per product; 'serials' = one row per physical unit. */
+  kind?: 'products' | 'serials';
+  /**
+   * Serials that appear more than once in the file. The later row overwrites
+   * the earlier, and the count is reported so the owner can correct the source.
+   */
+  duplicateSerials?: number;
+  /** Product rows created in `inventory` to group the imported units. */
+  productsTouched?: number;
+}
+
+/**
+ * Import a stock take that lists one row PER PHYSICAL UNIT with its serial.
+ *
+ * Two things are written for every row:
+ *   - a `stock_units` row, which is what a barcode scan looks up;
+ *   - the matching `inventory` product row, so the same item still appears in
+ *     the ordinary stock list with a correct count.
+ *
+ * Quantity per product is DERIVED by counting its units, never typed, so the
+ * two views cannot drift apart.
+ */
+async function importSerialStockTake(
+  sheet: ExcelJS.Worksheet,
+  headerRow: number,
+  cols: Record<string, number>,
+): Promise<InventoryImportResult> {
+  const result: InventoryImportResult = {
+    imported: 0, updated: 0, skipped: 0, negativeStock: 0, headerRow,
+    kind: 'serials', duplicateSerials: 0, productsTouched: 0,
+  };
+
+  const typeByName: Record<string, string> = {};
+  DEVICE_TYPES.forEach((t) => {
+    typeByName[t.ar] = t.value;
+    typeByName[t.en.toLowerCase()] = t.value;
+    typeByName[t.value] = t.value;
+  });
+
+  // Existing products, matched by name, so re-importing does not duplicate.
+  const productByName = new Map<string, string>();
+  for (const item of inventoryRepo.list()) {
+    const key = (item.model ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (key) productByName.set(key, item.id);
+  }
+
+  const seenSerials = new Set<string>();
+  // itemKey -> { name, type, prices[], productId }
+  const products = new Map<string, {
+    name: string; type: string; prices: number[]; id?: string;
+  }>();
+
+  const runImport = getDb().transaction(() => {
+    for (let r = headerRow + 1; r <= sheet.rowCount; r++) {
+      const row = sheet.getRow(r);
+      const at = (f: string) => (cols[f] !== undefined ? row.getCell(cols[f]) : null);
+
+      const serialCell = at('serial');
+      const serial = serialCell ? cellText(serialCell) : '';
+      const itemName = at('model') ? cellText(at('model')!) : '';
+
+      // Repeated page headers and the totals row are not units.
+      if (!serial || INVENTORY_HEADERS[normHeader(serial)] !== undefined) { result.skipped++; continue; }
+      if (/^(الاجمالي|الإجمالي|المجموع|total|grand total)$/i.test(itemName)) { result.skipped++; continue; }
+      if (!itemName) { result.skipped++; continue; }
+
+      const key = serialKey(serial);
+      if (seenSerials.has(key)) result.duplicateSerials = (result.duplicateSerials ?? 0) + 1;
+      seenSerials.add(key);
+
+      const type = typeByName[normHeader(at('type') ? cellText(at('type')!) : '')]
+        ?? guessDeviceType(itemName);
+      const unitPrice = cols.unitPrice !== undefined
+        ? (cellNumber(at('unitPrice')!) || undefined) : undefined;
+      const ageDays = cols.ageDays !== undefined
+        ? (cellNumber(at('ageDays')!) || undefined) : undefined;
+      const notes = cols.unitNotes !== undefined
+        ? (cellText(at('unitNotes')!) || undefined) : undefined;
+
+      // Group by product so the inventory count can be derived afterwards.
+      const pKey = itemName.replace(/\s+/g, ' ').trim().toLowerCase();
+      let p = products.get(pKey);
+      if (!p) { p = { name: itemName, type, prices: [], id: productByName.get(pKey) }; products.set(pKey, p); }
+      if (unitPrice) p.prices.push(unitPrice);
+
+      // A unit already installed at a client must not be pulled back into
+      // stock by re-importing the shop's stock take.
+      const existing = stockUnitsRepo.findBySerial(serial);
+      const saved = stockUnitsRepo.upsert({
+        id: existing?.id,
+        serialNumber: serial,
+        itemName,
+        type: type as never,
+        unitPrice,
+        ageDays,
+        notes,
+        status: existing?.status ?? 'in_stock',
+        clientId: existing?.clientId,
+        branchId: existing?.branchId,
+        deviceId: existing?.deviceId,
+      });
+      if (existing) result.updated++; else result.imported++;
+      void saved;
+    }
+
+    // Create/refresh the product rows and set each quantity from the unit count.
+    for (const [pKey, p] of products) {
+      const avg = p.prices.length
+        ? Math.round((p.prices.reduce((s, n) => s + n, 0) / p.prices.length) * 100) / 100
+        : undefined;
+      const item = inventoryRepo.upsert({
+        id: p.id,
+        type: p.type as never,
+        model: p.name,
+        unitPrice: avg,
+        // Placeholder; corrected from the real unit count immediately below.
+        quantity: 0,
+      });
+      productByName.set(pKey, item.id);
+      result.productsTouched = (result.productsTouched ?? 0) + 1;
+
+      // Link the units to their product and count what is actually in stock.
+      getDb().prepare(
+        'UPDATE stock_units SET inventory_item_id = ? WHERE lower(trim(item_name)) = ?',
+      ).run(item.id, p.name.replace(/\s+/g, ' ').trim().toLowerCase());
+
+      const inStock = (getDb().prepare(
+        "SELECT count(*) AS c FROM stock_units WHERE inventory_item_id = ? AND status = 'in_stock'",
+      ).get(item.id) as { c: number }).c;
+      getDb().prepare('UPDATE inventory SET quantity = ? WHERE id = ?').run(inStock, item.id);
+    }
+  });
+
+  runImport();
+  return result;
 }
 
 /**
@@ -364,6 +509,12 @@ export async function importInventoryExcel(sourcePath: string): Promise<Inventor
   if (!sheet) throw new Error('NO_SHEET');
 
   const { row: headerRow, cols } = findHeaderRow(sheet);
+
+  // The shop keeps two kinds of stock take. A serial column means one row per
+  // physical unit, which is a different shape and gets its own importer.
+  if (cols.serial !== undefined) {
+    return importSerialStockTake(sheet, headerRow, cols);
+  }
 
   const typeByName: Record<string, string> = {};
   DEVICE_TYPES.forEach((t) => {

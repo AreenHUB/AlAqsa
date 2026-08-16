@@ -19,7 +19,7 @@ import { visitsRepo } from '../db/repositories/visitsRepo';
 import {
   documentsRepo, camLicenseRepo, inventoryRepo, amcRepo, invoicesRepo,
   remindersRepo, statusLabelsRepo, settingsRepo, auditRepo, searchRepo,
-  dashboardRepo, mediaRepo,
+  dashboardRepo, mediaRepo, stockUnitsRepo,
 } from '../db/repositories/miscRepo';
 import { importFile, materializeToTemp, dataUrlToBuffer, writeEncrypted, deleteStored } from '../storage/fileStore';
 import { dataDir, filesDir, backupsDir, reportsDir, secureStorePath, dbPath } from '../storage/paths';
@@ -130,6 +130,22 @@ function requireUnlocked(ctx: AppContext): void {
 
 function notifyDataChanged(ctx: AppContext, entity: string): void {
   ctx.mainWindow?.webContents.send('event:data-changed', entity);
+}
+
+/**
+ * Re-derive a product's quantity from the units still in the shop.
+ *
+ * Quantity is never adjusted by arithmetic (`qty - 1`): counting the units is
+ * the one calculation that cannot drift out of step with reality after a
+ * re-import, a deleted device, or a unit returned to stock.
+ */
+function syncInventoryQuantity(inventoryItemId?: string): void {
+  if (!inventoryItemId) return;
+  const db = getDb();
+  const { c } = db.prepare(
+    "SELECT count(*) AS c FROM stock_units WHERE inventory_item_id = ? AND status = 'in_stock'",
+  ).get(inventoryItemId) as { c: number };
+  db.prepare('UPDATE inventory SET quantity = ? WHERE id = ?').run(c, inventoryItemId);
 }
 
 export function registerIpcHandlers(ctx: AppContext): void {
@@ -396,6 +412,18 @@ export function registerIpcHandlers(ctx: AppContext): void {
   handle('devices:create', (input) => {
     requireUnlocked(ctx);
     const d = devicesRepo.create(input);
+    // Installing a device consumes the shop unit carrying that serial, so the
+    // stock count follows what actually left the shop instead of being
+    // adjusted by hand.
+    if (d.serialNumber) {
+      const unit = stockUnitsRepo.findBySerial(d.serialNumber);
+      if (unit && unit.status === 'in_stock') {
+        const branch = d.branchId ? branchesRepo.get(d.branchId) : null;
+        stockUnitsRepo.markInstalled(unit.id, d.id, branch?.clientId, d.branchId);
+        syncInventoryQuantity(unit.inventoryItemId);
+        notifyDataChanged(ctx, 'stock');
+      }
+    }
     auditRepo.log('create', 'device', d.id, d.label ?? d.serialNumber ?? d.type);
     notifyDataChanged(ctx, 'devices');
     return d;
@@ -409,12 +437,79 @@ export function registerIpcHandlers(ctx: AppContext): void {
   });
   handle('devices:remove', (id: string) => {
     requireUnlocked(ctx);
+    // Deleting the device releases its unit back into the shop, otherwise the
+    // item would be lost from stock with nothing installed to account for it.
+    const existing = devicesRepo.get(id);
+    if (existing?.serialNumber) {
+      const unit = stockUnitsRepo.findBySerial(existing.serialNumber);
+      if (unit && unit.deviceId === id) {
+        stockUnitsRepo.returnToStock(unit.id);
+        syncInventoryQuantity(unit.inventoryItemId);
+        notifyDataChanged(ctx, 'stock');
+      }
+    }
     devicesRepo.remove(id);
     auditRepo.log('delete', 'device', id);
     notifyDataChanged(ctx, 'devices');
     return null;
   });
   handle('devices:findBySerial', (serial: string) => { requireUnlocked(ctx); return devicesRepo.findBySerial(serial); });
+
+  /**
+   * What does this serial belong to?
+   *
+   * Answers the scanner's question in one call, looking in both places a
+   * serial can live and telling the caller which it was:
+   *   - a unit still in the shop  -> fill the form from the stock record;
+   *   - a device already installed -> say where it is, so the same camera is
+   *     not recorded at two clients.
+   */
+  handle('stock:lookupSerial', (serial: string) => {
+    requireUnlocked(ctx);
+    const unit = stockUnitsRepo.findBySerial(serial);
+    const device = devicesRepo.findBySerial(serial.trim());
+    if (!unit && !device) return null;
+
+    let client = null;
+    let branch = null;
+    const clientId = device?.branchId ? undefined : unit?.clientId;
+    if (unit?.clientId || clientId) {
+      client = clientsRepo.get((unit?.clientId ?? clientId)!);
+    }
+    if (device?.branchId) {
+      branch = branchesRepo.get(device.branchId);
+      if (branch?.clientId) client = clientsRepo.get(branch.clientId);
+    }
+    return {
+      unit, device,
+      clientName: client ? (client.nameAr || client.nameEn) : undefined,
+      branchName: branch ? (branch.nameAr || branch.nameEn) : undefined,
+    };
+  });
+
+  handle('stock:list', (q) => { requireUnlocked(ctx); return stockUnitsRepo.list(q ?? {}); });
+  handle('stock:get', (id: string) => { requireUnlocked(ctx); return stockUnitsRepo.get(id); });
+  handle('stock:counts', () => { requireUnlocked(ctx); return stockUnitsRepo.counts(); });
+  handle('stock:upsert', (input: any) => {
+    requireUnlocked(ctx);
+    const u = stockUnitsRepo.upsert(input);
+    auditRepo.log('save', 'stock_unit', u.id, u.serialNumber);
+    notifyDataChanged(ctx, 'stock');
+    return u;
+  });
+  handle('stock:remove', (id: string) => {
+    requireUnlocked(ctx);
+    stockUnitsRepo.remove(id);
+    auditRepo.log('delete', 'stock_unit', id);
+    notifyDataChanged(ctx, 'stock');
+    return null;
+  });
+  handle('stock:returnToStock', (id: string) => {
+    requireUnlocked(ctx);
+    stockUnitsRepo.returnToStock(id);
+    notifyDataChanged(ctx, 'stock');
+    return null;
+  });
   handle('devices:qrDataUrl', async (id: string) => {
     requireUnlocked(ctx);
     const d = devicesRepo.get(id);

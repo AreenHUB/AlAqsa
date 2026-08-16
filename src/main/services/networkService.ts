@@ -196,6 +196,15 @@ class NetworkService {
       'search:global': (t) => misc.searchRepo.global(t),
       'dashboard:stats': () => misc.dashboardRepo.stats(),
       'inventory:list': (s) => misc.inventoryRepo.list(s),
+      // Serialised stock, so scanning a barcode works on the client PC too.
+      'stock:list': (q) => misc.stockUnitsRepo.list(q ?? {}),
+      'stock:get': (id) => misc.stockUnitsRepo.get(id),
+      'stock:counts': () => misc.stockUnitsRepo.counts(),
+      'stock:lookupSerial': (s) => {
+        const unit = misc.stockUnitsRepo.findBySerial(s);
+        const device = devicesRepo.findBySerial(String(s).trim());
+        return unit || device ? { unit, device } : null;
+      },
       'reminders:upcoming': (d) => misc.remindersRepo.upcoming(d),
     };
 

@@ -6,11 +6,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import {
   Modal, Field, TextInput, TextArea, Select, Loading, EmptyState,
-  ConfirmDialog, useToast, useErrorMessage, Badge,
+  ConfirmDialog, useToast, useErrorMessage, Badge, Tabs,
 } from '../components/ui';
 import { DEVICE_TYPES } from '@shared/constants';
 import { isPositiveNumber } from '../utils/validation';
-import type { InventoryItem } from '@shared/types';
+import type { InventoryItem, StockUnit } from '@shared/types';
 
 export function InventoryScreen() {
   const { t, lang, fmt } = useI18n();
@@ -25,16 +25,37 @@ export function InventoryScreen() {
   const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [deleting, setDeleting] = useState<InventoryItem | null>(null);
 
+  // Two views of the same stock: by product ("40 of this camera") and by
+  // physical unit ("this camera, serial ..."). Scanning works on the latter.
+  const [view, setView] = useState<'products' | 'units'>('products');
+  const [units, setUnits] = useState<StockUnit[]>([]);
+  const [unitTotal, setUnitTotal] = useState(0);
+  const [counts, setCounts] = useState({ total: 0, inStock: 0, installed: 0 });
+  const [statusFilter, setStatusFilter] = useState('');
+
   const load = useCallback(async () => {
     const res = await window.alaqsa.inventory.list(search || undefined);
     if (res.ok) setItems(res.data);
     setLoading(false);
   }, [search]);
 
+  const loadUnits = useCallback(async () => {
+    const [list, c] = await Promise.all([
+      window.alaqsa.stock.list({
+        search: search || undefined,
+        status: statusFilter || undefined,
+        limit: 300,
+      }),
+      window.alaqsa.stock.counts(),
+    ]);
+    if (list.ok) { setUnits(list.data.rows); setUnitTotal(list.data.total); }
+    if (c.ok) setCounts(c.data);
+  }, [search, statusFilter]);
+
   useEffect(() => {
-    const id = window.setTimeout(() => void load(), 200);
+    const id = window.setTimeout(() => { void load(); void loadUnits(); }, 200);
     return () => window.clearTimeout(id);
-  }, [load]);
+  }, [load, loadUnits]);
 
   const typeLabel = (v: string) => {
     const d = DEVICE_TYPES.find((x) => x.value === v);
@@ -48,14 +69,28 @@ export function InventoryScreen() {
     if (!picked.ok || !picked.data) return;
     const res = await window.alaqsa.inventory.importExcel(picked.data);
     if (!res.ok) return toast.error(errMsg(res.error));
-    const { imported, updated, negativeStock } = res.data;
-    toast.success(fmt(t.inventory.imported, { n: imported, u: updated }));
-    // Items the source file reported as over-issued were stored as zero; say so
-    // rather than letting a wrong stock figure pass unnoticed.
-    if (negativeStock > 0) {
-      toast.warning(fmt(t.inventory.importNegative, { n: negativeStock }));
+    const { imported, updated, negativeStock, kind, duplicateSerials, productsTouched } = res.data;
+
+    if (kind === 'serials') {
+      // The by-serial stock take: report units AND the products they rolled up
+      // into, because both views changed.
+      toast.success(fmt(t.stock.importedSerials, {
+        n: imported, u: updated, p: productsTouched ?? 0,
+      }));
+      if (duplicateSerials && duplicateSerials > 0) {
+        toast.warning(fmt(t.stock.duplicateSerialsWarning, { n: duplicateSerials }));
+      }
+      setView('units');
+    } else {
+      toast.success(fmt(t.inventory.imported, { n: imported, u: updated }));
+      // Items the source file reported as over-issued were stored as zero; say
+      // so rather than letting a wrong stock figure pass unnoticed.
+      if (negativeStock > 0) {
+        toast.warning(fmt(t.inventory.importNegative, { n: negativeStock }));
+      }
     }
     void load();
+    void loadUnits();
   };
 
   const confirmDelete = async () => {
@@ -86,21 +121,47 @@ export function InventoryScreen() {
         </div>
       </div>
 
-      <div className="stat-grid">
-        <div className="stat">
-          <div className="stat-label">{t.inventory.title}</div>
-          <div className="stat-value">{shown.length}</div>
+      <Tabs
+        tabs={[
+          { id: 'products', label: t.inventory.title },
+          { id: 'units', label: `${t.stock.title}${counts.total ? ` (${counts.total})` : ''}` },
+        ]}
+        active={view}
+        onChange={(v) => setView(v as 'products' | 'units')}
+      />
+
+      {view === 'products' ? (
+        <div className="stat-grid">
+          <div className="stat">
+            <div className="stat-label">{t.inventory.title}</div>
+            <div className="stat-value">{shown.length}</div>
+          </div>
+          <div className="stat">
+            <div className="stat-label">{t.inventory.quantity}</div>
+            <div className="stat-value">{shown.reduce((s, i) => s + (i.quantity ?? 0), 0)}</div>
+          </div>
+          <div className="stat accent-success">
+            <div className="stat-label">{t.common.total}</div>
+            <div className="stat-value">{totalValue.toLocaleString()}</div>
+            <div className="stat-sub">AED</div>
+          </div>
         </div>
-        <div className="stat">
-          <div className="stat-label">{t.inventory.quantity}</div>
-          <div className="stat-value">{shown.reduce((s, i) => s + (i.quantity ?? 0), 0)}</div>
+      ) : (
+        <div className="stat-grid">
+          <div className="stat">
+            <div className="stat-label">{t.stock.total}</div>
+            <div className="stat-value">{counts.total}</div>
+          </div>
+          <div className="stat accent-success">
+            <div className="stat-label">{t.stock.inStock}</div>
+            <div className="stat-value">{counts.inStock}</div>
+          </div>
+          <div className="stat">
+            <div className="stat-label">{t.stock.installed}</div>
+            <div className="stat-value">{counts.installed}</div>
+          </div>
         </div>
-        <div className="stat accent-success">
-          <div className="stat-label">{t.common.total}</div>
-          <div className="stat-value">{totalValue.toLocaleString()}</div>
-          <div className="stat-sub">AED</div>
-        </div>
-      </div>
+      )}
 
       <div className="card">
         <div className="card-body row gap-10 wrap" style={{ padding: 14 }}>
@@ -112,20 +173,94 @@ export function InventoryScreen() {
             onChange={(e) => setSearch(e.target.value)}
           />
           <div style={{ flex: '1 1 160px' }}>
-            <Select
-              value={typeFilter}
-              onChange={setTypeFilter}
-              placeholder={t.common.type}
-              options={DEVICE_TYPES.map((d) => ({ value: d.value, label: lang === 'ar' ? d.ar : d.en }))}
-            />
+            {view === 'products' ? (
+              <Select
+                value={typeFilter}
+                onChange={setTypeFilter}
+                placeholder={t.common.type}
+                options={DEVICE_TYPES.map((d) => ({ value: d.value, label: lang === 'ar' ? d.ar : d.en }))}
+              />
+            ) : (
+              <Select
+                value={statusFilter}
+                onChange={setStatusFilter}
+                placeholder={t.stock.status}
+                options={[
+                  { value: 'in_stock', label: t.stock.inStock },
+                  { value: 'installed', label: t.stock.installed },
+                  { value: 'returned', label: t.stock.returned },
+                  { value: 'faulty', label: t.stock.faulty },
+                ]}
+              />
+            )}
           </div>
           <div className="small muted" style={{ marginInlineStart: 'auto', maxWidth: 380 }}>
-            ℹ️ {t.inventory.importHint}
+            ℹ️ {view === 'products' ? t.inventory.importHint : t.stock.subtitle}
           </div>
         </div>
       </div>
 
-      {shown.length === 0 ? (
+      {view === 'units' && (
+        units.length === 0 ? (
+          <EmptyState icon="🔢" title={t.stock.noUnits}
+            action={
+              <button className="btn btn-outline" onClick={importExcel}>
+                📥 {t.inventory.importExcel}
+              </button>
+            } />
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t.stock.serial}</th>
+                  <th>{t.stock.item}</th>
+                  <th>{t.common.type}</th>
+                  <th>{t.inventory.unitPrice}</th>
+                  <th>{t.stock.status}</th>
+                  <th style={{ width: 90 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {units.map((u) => (
+                  <tr key={u.id}>
+                    <td className="small bold mono" dir="ltr">{u.serialNumber}</td>
+                    <td className="small">{u.itemName}</td>
+                    <td><Badge kind="info">{typeLabel(u.type)}</Badge></td>
+                    <td className="small">{u.unitPrice?.toLocaleString() ?? '—'}</td>
+                    <td>
+                      <Badge kind={u.status === 'in_stock' ? 'success'
+                        : u.status === 'installed' ? 'info' : 'warning'}>
+                        {u.status === 'in_stock' ? t.stock.inStock
+                          : u.status === 'installed' ? t.stock.installed
+                            : u.status === 'returned' ? t.stock.returned : t.stock.faulty}
+                      </Badge>
+                    </td>
+                    <td>
+                      {u.status === 'installed' && (
+                        <button className="btn btn-ghost btn-sm"
+                          title={t.stock.returnToStock}
+                          onClick={async () => {
+                            const r = await window.alaqsa.stock.returnToStock(u.id);
+                            if (r.ok) { toast.success(t.msg.updated); void loadUnits(); void load(); }
+                            else toast.error(errMsg(r.error));
+                          }}>↩</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {unitTotal > units.length && (
+              <div className="small muted" style={{ padding: 10, textAlign: 'center' }}>
+                {units.length} / {unitTotal}
+              </div>
+            )}
+          </div>
+        )
+      )}
+
+      {view === 'products' && (shown.length === 0 ? (
         <EmptyState icon="📦" title={t.inventory.noItems}
           action={
             <div className="row gap-8">
@@ -177,7 +312,7 @@ export function InventoryScreen() {
             </tbody>
           </table>
         </div>
-      )}
+      ))}
 
       <InventoryFormModal
         open={formOpen}

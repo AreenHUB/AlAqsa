@@ -8,6 +8,7 @@ import { uuid, now, toBool, fromBool, parseJson } from '../helpers';
 import type {
   MediaRef, DocumentRecord, CameraLicense, InventoryItem, AmcContract,
   Invoice, Reminder, StatusLabel, AuditEntry, Client, Branch, Device, Contact,
+  StockUnit,
 } from '@shared/types';
 import type { DashboardStats, GlobalSearchResult } from '@shared/ipc';
 
@@ -171,6 +172,144 @@ export const inventoryRepo = {
   },
   remove(id: string): void {
     getDb().prepare('DELETE FROM inventory WHERE id = ?').run(id);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Stock units — one row per PHYSICAL item, identified by its serial number.
+// ---------------------------------------------------------------------------
+function mapUnit(r: any): StockUnit {
+  return {
+    id: r.id, serialNumber: r.serial_number,
+    inventoryItemId: r.inventory_item_id ?? undefined,
+    itemName: r.item_name, type: r.type,
+    manufacturer: r.manufacturer ?? undefined,
+    unitPrice: r.unit_price ?? undefined,
+    status: r.status,
+    clientId: r.client_id ?? undefined,
+    branchId: r.branch_id ?? undefined,
+    deviceId: r.device_id ?? undefined,
+    ageDays: r.age_days ?? undefined,
+    notes: r.notes ?? undefined,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  };
+}
+
+/**
+ * Serials are compared case-insensitively and without separators.
+ *
+ * The shop's own stock take mixes cases for the same format, barcode scanners
+ * report whatever the label encodes, and a person retyping a serial rarely
+ * reproduces the dashes. Matching on this key means all of those find the
+ * same unit, while `serial_number` keeps the original for display.
+ */
+export function serialKey(serial: string): string {
+  return serial.trim().toLowerCase().replace(/[\s\-_/.:]/g, '');
+}
+
+export const stockUnitsRepo = {
+  /** Look a unit up by serial, however it was typed or scanned. */
+  findBySerial(serial: string): StockUnit | null {
+    const key = serialKey(serial);
+    if (!key) return null;
+    const r = getDb()
+      .prepare('SELECT * FROM stock_units WHERE serial_key = ? ORDER BY status = \'in_stock\' DESC LIMIT 1')
+      .get(key) as any;
+    return r ? mapUnit(r) : null;
+  },
+
+  get(id: string): StockUnit | null {
+    const r = getDb().prepare('SELECT * FROM stock_units WHERE id = ?').get(id) as any;
+    return r ? mapUnit(r) : null;
+  },
+
+  /** Browse/search the shop's serialised stock. */
+  list(q: { search?: string; status?: string; limit?: number; offset?: number } = {}):
+  { rows: StockUnit[]; total: number } {
+    const db = getDb();
+    const where: string[] = [];
+    const params: Record<string, unknown> = {};
+    if (q.search) {
+      // Match the serial the way a scanner would, and the item name the way a
+      // person would.
+      where.push('(serial_key LIKE @key OR item_name LIKE @raw OR serial_number LIKE @raw)');
+      params.key = `%${serialKey(q.search)}%`;
+      params.raw = `%${q.search.trim()}%`;
+    }
+    if (q.status) { where.push('status = @status'); params.status = q.status; }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const total = (db.prepare(`SELECT count(*) AS c FROM stock_units ${whereSql}`)
+      .get(params) as { c: number }).c;
+    const rows = db.prepare(
+      `SELECT * FROM stock_units ${whereSql} ORDER BY item_name, serial_number
+       LIMIT @limit OFFSET @offset`,
+    ).all({ ...params, limit: q.limit ?? 100, offset: q.offset ?? 0 }) as any[];
+    return { rows: rows.map(mapUnit), total };
+  },
+
+  upsert(input: Partial<StockUnit> & { serialNumber: string }): StockUnit {
+    const db = getDb();
+    const ts = now();
+    const key = serialKey(input.serialNumber);
+    const existing = input.id
+      ? db.prepare('SELECT id FROM stock_units WHERE id = ?').get(input.id) as any
+      : db.prepare('SELECT id FROM stock_units WHERE serial_key = ?').get(key) as any;
+    const id = existing?.id ?? input.id ?? uuid();
+
+    if (existing) {
+      db.prepare(`UPDATE stock_units SET serial_number=?, serial_key=?, inventory_item_id=?,
+        item_name=?, type=?, manufacturer=?, unit_price=?, status=?, client_id=?, branch_id=?,
+        device_id=?, age_days=?, notes=?, updated_at=? WHERE id=?`)
+        .run(input.serialNumber.trim(), key, input.inventoryItemId ?? null,
+          input.itemName ?? '', input.type ?? 'other', input.manufacturer ?? null,
+          input.unitPrice ?? null, input.status ?? 'in_stock', input.clientId ?? null,
+          input.branchId ?? null, input.deviceId ?? null, input.ageDays ?? null,
+          input.notes ?? null, ts, id);
+    } else {
+      db.prepare(`INSERT INTO stock_units (id, serial_number, serial_key, inventory_item_id,
+        item_name, type, manufacturer, unit_price, status, client_id, branch_id, device_id,
+        age_days, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(id, input.serialNumber.trim(), key, input.inventoryItemId ?? null,
+          input.itemName ?? '', input.type ?? 'other', input.manufacturer ?? null,
+          input.unitPrice ?? null, input.status ?? 'in_stock', input.clientId ?? null,
+          input.branchId ?? null, input.deviceId ?? null, input.ageDays ?? null,
+          input.notes ?? null, ts, ts);
+    }
+    return this.get(id)!;
+  },
+
+  /**
+   * Mark a unit as installed at a client. Called when a device is created from
+   * a scanned serial, so shop stock reflects what actually left the shop.
+   */
+  markInstalled(id: string, deviceId: string, clientId?: string, branchId?: string): void {
+    getDb().prepare(
+      `UPDATE stock_units SET status='installed', device_id=?, client_id=?, branch_id=?,
+       updated_at=? WHERE id=?`,
+    ).run(deviceId, clientId ?? null, branchId ?? null, now(), id);
+  },
+
+  /** Put a unit back into stock (device deleted or wrongly linked). */
+  returnToStock(id: string): void {
+    getDb().prepare(
+      `UPDATE stock_units SET status='in_stock', device_id=NULL, client_id=NULL,
+       branch_id=NULL, updated_at=? WHERE id=?`,
+    ).run(now(), id);
+  },
+
+  remove(id: string): void {
+    getDb().prepare('DELETE FROM stock_units WHERE id = ?').run(id);
+  },
+
+  counts(): { total: number; inStock: number; installed: number } {
+    const db = getDb();
+    const one = (sql: string) => (db.prepare(sql).get() as { c: number }).c;
+    return {
+      total: one('SELECT count(*) AS c FROM stock_units'),
+      inStock: one("SELECT count(*) AS c FROM stock_units WHERE status='in_stock'"),
+      installed: one("SELECT count(*) AS c FROM stock_units WHERE status='installed'"),
+    };
   },
 };
 
@@ -462,8 +601,17 @@ export const searchRepo = {
     const contacts = db.prepare(
       'SELECT * FROM contacts WHERE name LIKE ? OR phones LIKE ? OR emails LIKE ? LIMIT 25',
     ).all(s, s, s) as any[];
+    // Shop stock is searched by the normalised serial too, so a serial typed
+    // with different dashes or casing than the label still finds its unit.
+    const key = `%${serialKey(term)}%`;
+    const stockUnits = db.prepare(
+      `SELECT * FROM stock_units
+       WHERE serial_key LIKE ? OR serial_number LIKE ? OR item_name LIKE ?
+       ORDER BY status = 'in_stock' DESC, item_name LIMIT 25`,
+    ).all(key, s, s) as any[];
 
     return {
+      stockUnits: stockUnits.map(mapUnit),
       clients: clients.map((r) => ({
         id: r.id, code: r.code, type: r.type, nameAr: r.name_ar, nameEn: r.name_en ?? undefined,
         statusLabelId: r.status_label_id ?? undefined, rating: r.rating,

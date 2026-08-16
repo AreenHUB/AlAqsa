@@ -252,6 +252,34 @@ export interface Visit {
 // Inventory (shop stock — feeds autocomplete)
 // ---------------------------------------------------------------------------
 
+/** Where a physical unit currently is. */
+export type StockStatus = 'in_stock' | 'installed' | 'returned' | 'faulty';
+
+/**
+ * One PHYSICAL unit in the shop, identified by its serial number.
+ *
+ * `InventoryItem` counts a product ("40 of this camera"); this identifies a
+ * particular camera. Scanning a barcode looks up one of these and fills the
+ * device form from it.
+ */
+export interface StockUnit {
+  id: UUID;
+  serialNumber: string;
+  inventoryItemId?: UUID;
+  itemName: string;
+  type: DeviceType;
+  manufacturer?: string;
+  unitPrice?: number;
+  status: StockStatus;
+  clientId?: UUID;
+  branchId?: UUID;
+  deviceId?: UUID;
+  ageDays?: number;
+  notes?: string;
+  createdAt: ISODate;
+  updatedAt: ISODate;
+}
+
 export interface InventoryItem {
   id: UUID;
   type: DeviceType;

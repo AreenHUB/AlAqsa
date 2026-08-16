@@ -61,7 +61,8 @@ export function GlobalSearch({
   };
 
   const total = result
-    ? result.clients.length + result.branches.length + result.devices.length + result.contacts.length
+    ? result.clients.length + result.branches.length + result.devices.length
+      + result.contacts.length + result.stockUnits.length
     : 0;
 
   const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
@@ -185,6 +186,23 @@ export function GlobalSearch({
                   primary={c.name}
                   secondary={[...c.phones, ...c.emails].join(' · ')}
                   onClick={() => navigate({ name: 'client', id: c.clientId })}
+                />
+              ))}
+            </Section>
+          )}
+
+          {/* Shop stock by serial — how a scanned barcode is found. */}
+          {result && result.stockUnits.length > 0 && (
+            <Section title={t.stock.title}>
+              {result.stockUnits.map((u) => (
+                <Row
+                  key={u.id}
+                  icon={u.status === 'in_stock' ? '📦' : '📍'}
+                  primary={u.itemName}
+                  secondary={`S/N: ${u.serialNumber} · ${
+                    u.status === 'in_stock' ? t.stock.inStock : t.stock.installed
+                  }`}
+                  onClick={() => navigate({ name: 'inventory' })}
                 />
               ))}
             </Section>

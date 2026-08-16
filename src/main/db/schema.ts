@@ -325,4 +325,53 @@ MIGRATIONS.push({
   `,
 });
 
+// ---------------------------------------------------------------------------
+// v3 — individual stock units, identified by serial number.
+//
+// `inventory` holds one row per PRODUCT ("Camera Bullet 2MP IP UNV", 40 in
+// stock). This table holds one row per PHYSICAL UNIT, each with its own serial.
+// The shop's serial stock-take is one row per unit, and a scanner reads one
+// unit, so the two cannot share a table.
+//
+// When a unit is installed at a client it is linked to the resulting device
+// row and marked 'installed', which is what keeps the shop's stock honest
+// without anyone having to decrement a counter by hand.
+// ---------------------------------------------------------------------------
+MIGRATIONS.push({
+  version: 3,
+  up: /* sql */ `
+    CREATE TABLE stock_units (
+      id TEXT PRIMARY KEY,
+      serial_number TEXT NOT NULL,
+      -- Lowercased serial. Scanners and hand-typing vary in case, so lookups
+      -- go through this column; the original is preserved for display.
+      serial_key TEXT NOT NULL,
+      inventory_item_id TEXT,
+      item_name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'other',
+      manufacturer TEXT,
+      unit_price REAL,
+      -- in_stock | installed | returned | faulty
+      status TEXT NOT NULL DEFAULT 'in_stock',
+      client_id TEXT,
+      branch_id TEXT,
+      device_id TEXT,
+      -- Days the unit has been held in the shop, as reported by the stock take.
+      age_days INTEGER,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (inventory_item_id) REFERENCES inventory(id) ON DELETE SET NULL
+    );
+    CREATE INDEX idx_stock_serial_key ON stock_units(serial_key);
+    CREATE INDEX idx_stock_status ON stock_units(status);
+    CREATE INDEX idx_stock_item ON stock_units(inventory_item_id);
+    CREATE INDEX idx_stock_client ON stock_units(client_id);
+
+    -- Which stock unit a device came from, so an installed camera can be
+    -- traced back to the exact unit that left the shop.
+    ALTER TABLE devices ADD COLUMN stock_unit_id TEXT;
+  `,
+});
+
 export const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
