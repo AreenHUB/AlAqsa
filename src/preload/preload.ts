@@ -7,7 +7,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 /** Groups and their methods — must mirror `IpcApi` in shared/ipc.ts. */
 const API_MAP: Record<string, string[]> = {
-  auth: ['status', 'firstRunSetup', 'unlock', 'unlockWithRecovery', 'changePassword', 'regenerateRecoveryKey', 'lock', 'listUsers', 'signIn', 'signOut', 'currentUser'],
+  auth: ['status', 'firstRunSetup', 'unlock', 'unlockWithRecovery', 'changePassword', 'regenerateRecoveryKey', 'lock', 'sessionInfo', 'elevate', 'dropOwner', 'setDailyPassword', 'clearDailyPassword', 'listUsers', 'signIn', 'signOut', 'currentUser'],
   license: ['state', 'activate'],
   clients: ['list', 'get', 'create', 'update', 'remove', 'contacts', 'saveContacts'],
   branches: ['listByClient', 'create', 'update', 'remove'],

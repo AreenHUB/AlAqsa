@@ -8,6 +8,8 @@ import { useToast } from './components/ui';
 import { GlobalSearch } from './components/GlobalSearch';
 import { AppMenuBar } from './components/AppMenuBar';
 import { SessionMenu } from './components/SessionMenu';
+import { OwnerBadge } from './components/OwnerBadge';
+import { USER_ACCOUNTS_ENABLED } from '@shared/featureFlags';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { ClientsScreen } from './screens/ClientsScreen';
 import { ClientDetailScreen } from './screens/ClientDetailScreen';
@@ -215,7 +217,11 @@ export function Shell({ onLock }: { onLock: () => void }) {
           </button>
 
           <div className="row gap-6">
-            <SessionMenu onChanged={() => setSessionVersion((v) => v + 1)} />
+            {/* Staff switcher while user accounts are on; otherwise the
+                owner-mode badge for the two-password model. */}
+            {USER_ACCOUNTS_ENABLED
+              ? <SessionMenu onChanged={() => setSessionVersion((v) => v + 1)} />
+              : <OwnerBadge onChanged={() => setSessionVersion((v) => v + 1)} />}
             <button
               className="btn btn-ghost btn-sm"
               onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}

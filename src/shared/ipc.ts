@@ -57,6 +57,17 @@ export interface FirstRunSetupResult {
   recoveryKey: string; // shown ONCE
 }
 
+/** What the current session is allowed to do. */
+export interface SessionInfo {
+  unlocked: boolean;
+  /** Opened with the MASTER password, so owner-only operations are allowed. */
+  isOwner: boolean;
+  /** Whether a separate shared daily password has been configured. */
+  hasDailyPassword: boolean;
+  /** Whether staff accounts and roles are switched on in this build. */
+  userAccountsEnabled: boolean;
+}
+
 // ---- Query params ---------------------------------------------------------
 export interface ClientQuery {
   search?: string;
@@ -101,6 +112,16 @@ export interface IpcApi {
     changePassword(oldPw: string, newPw: string): Promise<Result<null>>;
     regenerateRecoveryKey(password: string): Promise<Result<{ recoveryKey: string }>>;
     lock(): Promise<Result<null>>;
+    /** Who is using the app, and may they perform owner-only operations? */
+    sessionInfo(): Promise<Result<SessionInfo>>;
+    /** Prove ownership with the master password without locking the app. */
+    elevate(masterPassword: string): Promise<Result<{ isOwner: boolean }>>;
+    /** Step back down to an ordinary daily session. */
+    dropOwner(): Promise<Result<{ isOwner: boolean }>>;
+    /** Set the shared daily password (authorised by the master password). */
+    setDailyPassword(masterPassword: string, dailyPassword: string): Promise<Result<null>>;
+    /** Remove the daily password, leaving only the master password. */
+    clearDailyPassword(masterPassword: string): Promise<Result<null>>;
     /** Users available to sign in as (empty => single-operator mode). */
     listUsers(): Promise<Result<SignInUser[]>>;
     signIn(userId: string, password: string): Promise<Result<SignInUser>>;

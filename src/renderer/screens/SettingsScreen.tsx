@@ -11,7 +11,26 @@ import {
 } from '../components/ui';
 import { StaffTab } from '../components/StaffTab';
 import { LicenseTab } from '../components/LicenseTab';
+import { USER_ACCOUNTS_ENABLED } from '@shared/featureFlags';
 import type { StatusLabel, AppUser, AuditEntry } from '@shared/types';
+import type { SessionInfo } from '@shared/ipc';
+
+/**
+ * Shown in place of an owner-only tab when the app was opened with the shared
+ * daily password. This is a signpost, not a security control: the same rule is
+ * enforced on every channel in the main process, so a hidden tab cannot be
+ * worked around by reaching the IPC bridge directly.
+ */
+function OwnerOnlyNotice() {
+  const { t } = useI18n();
+  return (
+    <EmptyState
+      icon="🔒"
+      title={t.settings.ownerOnlyTitle}
+      message={t.settings.ownerOnlyBody}
+    />
+  );
+}
 
 export function SettingsScreen({ onLock }: { onLock: () => void }) {
   const { t, lang, setLang } = useI18n();
@@ -19,6 +38,23 @@ export function SettingsScreen({ onLock }: { onLock: () => void }) {
   const errMsg = useErrorMessage();
   const [tab, setTab] = useState('general');
 
+  // Which tabs the daily password may open. Refreshed when the owner elevates.
+  const [isOwner, setIsOwner] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const check = () => void window.alaqsa.auth.sessionInfo().then((r) => {
+      if (alive && r.ok) setIsOwner(r.data.isOwner);
+    });
+    check();
+    // The badge in the header can change ownership at any time.
+    const id = window.setInterval(check, 1500);
+    return () => { alive = false; window.clearInterval(id); };
+  }, []);
+
+  // The Users tab is hidden while staff accounts are switched off. UsersTab
+  // itself is left intact below so the feature can be restored by flipping
+  // USER_ACCOUNTS_ENABLED. Note that "staff" is a different thing: that is the
+  // directory of technician names used on visit reports, not login accounts.
   const tabs = [
     { id: 'general', label: t.settings.general },
     { id: 'security', label: t.settings.security },
@@ -27,7 +63,7 @@ export function SettingsScreen({ onLock }: { onLock: () => void }) {
     { id: 'network', label: t.settings.network },
     { id: 'license', label: t.license.title },
     { id: 'data', label: t.settings.dataManagement },
-    { id: 'users', label: t.settings.users },
+    ...(USER_ACCOUNTS_ENABLED ? [{ id: 'users', label: t.settings.users }] : []),
     { id: 'audit', label: t.settings.auditLog },
   ];
 
@@ -39,14 +75,15 @@ export function SettingsScreen({ onLock }: { onLock: () => void }) {
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
       {tab === 'general' && <GeneralTab />}
-      {tab === 'security' && <SecurityTab onLock={onLock} />}
+      {tab === 'security' && <SecurityTab onLock={onLock} isOwner={isOwner} />}
       {tab === 'labels' && <LabelsTab />}
       {tab === 'staff' && <StaffTab />}
-      {tab === 'network' && <NetworkTab />}
-      {tab === 'license' && <LicenseTab />}
-      {tab === 'data' && <DataTab />}
-      {tab === 'users' && <UsersTab />}
-      {tab === 'audit' && <AuditTab />}
+      {/* Owner-only: these change the machine, the data, or reveal the log. */}
+      {tab === 'network' && (isOwner ? <NetworkTab /> : <OwnerOnlyNotice />)}
+      {tab === 'license' && (isOwner ? <LicenseTab /> : <OwnerOnlyNotice />)}
+      {tab === 'data' && (isOwner ? <DataTab /> : <OwnerOnlyNotice />)}
+      {tab === 'users' && USER_ACCOUNTS_ENABLED && <UsersTab />}
+      {tab === 'audit' && (isOwner ? <AuditTab /> : <OwnerOnlyNotice />)}
     </div>
   );
 }
@@ -91,7 +128,7 @@ function GeneralTab() {
 }
 
 // ---------------------------------------------------------------------------
-function SecurityTab({ onLock }: { onLock: () => void }) {
+function SecurityTab({ onLock, isOwner }: { onLock: () => void; isOwner: boolean }) {
   const { t } = useI18n();
   const toast = useToast();
   const errMsg = useErrorMessage();
@@ -105,6 +142,56 @@ function SecurityTab({ onLock }: { onLock: () => void }) {
   const [newRecoveryKey, setNewRecoveryKey] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+
+  // --- the shared daily password -------------------------------------------
+  const [session, setSession] = useState<SessionInfo | null>(null);
+  const [dailyOpen, setDailyOpen] = useState(false);
+  const [dailyMaster, setDailyMaster] = useState('');
+  const [dailyNew, setDailyNew] = useState('');
+  const [dailyConfirm, setDailyConfirm] = useState('');
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearMaster, setClearMaster] = useState('');
+
+  const loadSession = useCallback(async () => {
+    const res = await window.alaqsa.auth.sessionInfo();
+    if (res.ok) setSession(res.data);
+  }, []);
+  useEffect(() => { void loadSession(); }, [loadSession]);
+
+  const saveDaily = async () => {
+    const e: Record<string, string> = {};
+    if (dailyNew.length < 4) e.dailyNew = t.auth.passwordTooShort;
+    if (dailyNew !== dailyConfirm) e.dailyConfirm = t.auth.passwordMismatch;
+    setErrors(e);
+    if (Object.keys(e).length) return;
+
+    setBusy(true);
+    const res = await window.alaqsa.auth.setDailyPassword(dailyMaster, dailyNew);
+    setBusy(false);
+    if (!res.ok) {
+      // The two passwords must stay different, or the daily one would hand
+      // every member of staff the owner's authority.
+      setErrors(res.error === 'DAILY_MUST_DIFFER'
+        ? { dailyNew: t.auth.dailyMustDiffer }
+        : { dailyMaster: t.auth.wrongPassword });
+      return;
+    }
+    toast.success(t.msg.updated);
+    setDailyOpen(false);
+    setDailyMaster(''); setDailyNew(''); setDailyConfirm('');
+    void loadSession();
+  };
+
+  const clearDaily = async () => {
+    setBusy(true);
+    const res = await window.alaqsa.auth.clearDailyPassword(clearMaster);
+    setBusy(false);
+    if (!res.ok) return setErrors({ clearMaster: t.auth.wrongPassword });
+    toast.success(t.msg.updated);
+    setClearOpen(false);
+    setClearMaster('');
+    void loadSession();
+  };
 
   const changePassword = async () => {
     const e: Record<string, string> = {};
@@ -133,7 +220,11 @@ function SecurityTab({ onLock }: { onLock: () => void }) {
 
   return (
     <div className="col gap-16">
+      {/* Locking the app is everyone's business; changing the locks is not. */}
+      {!isOwner && <OwnerOnlyNotice />}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+        {isOwner && (
         <div className="card">
           <div className="card-head"><span className="card-title">🔑 {t.auth.changePassword}</span></div>
           <div className="card-body col gap-10">
@@ -143,7 +234,37 @@ function SecurityTab({ onLock }: { onLock: () => void }) {
             </button>
           </div>
         </div>
+        )}
 
+        {isOwner && (
+        <div className="card">
+          <div className="card-head"><span className="card-title">🔓 {t.auth.dailyPassword}</span></div>
+          <div className="card-body col gap-10">
+            <p className="small muted" style={{ lineHeight: 1.7 }}>{t.auth.dailyPasswordIntro}</p>
+            <div className="row gap-8 wrap">
+              <Badge kind={session?.hasDailyPassword ? 'success' : 'neutral'}>
+                {session?.hasDailyPassword ? t.auth.dailyPasswordSet : t.auth.dailyPasswordNotSet}
+              </Badge>
+            </div>
+            <div className="row gap-8 wrap">
+              <button className="btn btn-primary" onClick={() => {
+                setErrors({}); setDailyMaster(''); setDailyNew(''); setDailyConfirm(''); setDailyOpen(true);
+              }}>
+                {session?.hasDailyPassword ? t.auth.changeDailyPassword : t.auth.setDailyPassword}
+              </button>
+              {session?.hasDailyPassword && (
+                <button className="btn btn-outline" onClick={() => {
+                  setErrors({}); setClearMaster(''); setClearOpen(true);
+                }}>
+                  {t.auth.removeDailyPassword}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        )}
+
+        {isOwner && (
         <div className="card">
           <div className="card-head"><span className="card-title">🗝 {t.auth.recoveryKey}</span></div>
           <div className="card-body col gap-10">
@@ -153,6 +274,7 @@ function SecurityTab({ onLock }: { onLock: () => void }) {
             </button>
           </div>
         </div>
+        )}
 
         <div className="card">
           <div className="card-head"><span className="card-title">🔒 {t.auth.lock}</span></div>
@@ -189,6 +311,62 @@ function SecurityTab({ onLock }: { onLock: () => void }) {
           </Field>
           <Field label={t.auth.confirmPassword} required error={errors.confirmPw}>
             <TextInput type="password" value={confirmPw} onChange={setConfirmPw} error={!!errors.confirmPw} />
+          </Field>
+        </div>
+      </Modal>
+
+      <Modal
+        open={dailyOpen}
+        title={session?.hasDailyPassword ? t.auth.changeDailyPassword : t.auth.setDailyPassword}
+        onClose={() => setDailyOpen(false)}
+        size="sm"
+        onSubmit={saveDaily}
+        footer={
+          <>
+            <button className="btn btn-outline" onClick={() => setDailyOpen(false)}>{t.common.cancel}</button>
+            <button className="btn btn-primary" onClick={saveDaily} disabled={busy}>
+              {busy ? <span className="spinner" /> : t.common.save}
+            </button>
+          </>
+        }
+      >
+        <div className="col gap-12">
+          <p className="small muted" style={{ lineHeight: 1.7 }}>{t.auth.dailyPasswordExplain}</p>
+          <Field label={t.auth.masterPassword} required error={errors.dailyMaster}
+            hint={t.auth.masterAuthorises}>
+            <TextInput type="password" value={dailyMaster} onChange={setDailyMaster}
+              error={!!errors.dailyMaster} autoFocus />
+          </Field>
+          <Field label={t.auth.newDailyPassword} required error={errors.dailyNew}>
+            <TextInput type="password" value={dailyNew} onChange={setDailyNew} error={!!errors.dailyNew} />
+          </Field>
+          <Field label={t.auth.confirmPassword} required error={errors.dailyConfirm}>
+            <TextInput type="password" value={dailyConfirm} onChange={setDailyConfirm}
+              error={!!errors.dailyConfirm} />
+          </Field>
+        </div>
+      </Modal>
+
+      <Modal
+        open={clearOpen}
+        title={t.auth.removeDailyPassword}
+        onClose={() => setClearOpen(false)}
+        size="sm"
+        onSubmit={clearDaily}
+        footer={
+          <>
+            <button className="btn btn-outline" onClick={() => setClearOpen(false)}>{t.common.cancel}</button>
+            <button className="btn btn-danger" onClick={clearDaily} disabled={busy || !clearMaster}>
+              {busy ? <span className="spinner" /> : t.common.confirm}
+            </button>
+          </>
+        }
+      >
+        <div className="col gap-12">
+          <p className="small muted" style={{ lineHeight: 1.7 }}>{t.auth.removeDailyExplain}</p>
+          <Field label={t.auth.masterPassword} required error={errors.clearMaster}>
+            <TextInput type="password" value={clearMaster} onChange={setClearMaster}
+              error={!!errors.clearMaster} autoFocus />
           </Field>
         </div>
       </Modal>

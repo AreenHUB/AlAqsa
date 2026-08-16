@@ -28,8 +28,10 @@ import { seedDemoData } from '../services/demoData';
 import { staffRepo, notesRepo } from '../db/repositories/staffRepo';
 import {
   assertAllowed, setCurrentUser, getCurrentRole, getCurrentUserId,
-  setOwnerAuthenticated, returnToOwner, clearSession, isOwnerSession,
+  setOwnerAuthenticated, setDailyAuthenticated, returnToOwner, clearSession,
+  isOwnerSession, isUnlockedSession, assertFeatureEnabled,
 } from '../security/permissions';
+import { USER_ACCOUNTS_ENABLED } from '@shared/featureFlags';
 import { generateVisitPdf, generateAgreementPdf, generateInvoicePdf } from '../services/pdfService';
 import { exportClientExcel, exportAllExcel, importInventoryExcel } from '../services/excelService';
 import { shareViaWhatsApp, shareTextViaWhatsApp, printFile } from '../services/shareService';
@@ -59,6 +61,7 @@ function classifyError(e: unknown): { code: string; error: string } {
     'NOT_SIGNED_IN', 'USERNAME_TAKEN', 'USERNAME_REQUIRED',
     'PASSWORD_REQUIRED', 'USER_NOT_FOUND', 'USER_HAS_NO_PASSWORD',
     'CANNOT_REMOVE_LAST_ADMIN',
+    'OWNER_PASSWORD_REQUIRED', 'DAILY_MUST_DIFFER', 'FEATURE_DISABLED',
   ];
   if (known.includes(raw)) return { code: raw, error: raw };
 
@@ -93,6 +96,10 @@ const UNGATED = new Set([
   'auth:firstRunSetup', 'auth:lock', 'app:about',
   'settings:setLanguage', 'settings:setTheme', 'network:getMode',
   'auth:listUsers', 'auth:signIn', 'auth:signOut', 'auth:currentUser',
+  // Describing the session, and proving ownership, must work before any
+  // owner-gated channel will pass — otherwise the owner could never elevate.
+  // 'auth:elevate' verifies the master password itself before granting it.
+  'auth:sessionInfo', 'auth:elevate', 'auth:dropOwner',
   // Licensing must work BEFORE anyone can be authenticated: with no valid
   // licence the app never opens, so requiring a role to activate one is a
   // deadlock — the licence screen could never submit a key. Activation is
@@ -146,11 +153,18 @@ export function registerIpcHandlers(ctx: AppContext): void {
   });
 
   handle('auth:unlock', (password: string) => {
-    if (!ctx.secure.unlockWithPassword(password)) throw new Error('WRONG_PASSWORD');
+    // Either password opens the app. Which one was used decides whether this
+    // session may perform the owner-only operations.
+    const kind = ctx.secure.unlockWithPassword(password);
+    if (!kind) throw new Error('WRONG_PASSWORD');
     openDatabase(ctx.secure.getSqlcipherKey());
-    // The master password decrypts the database, so holding it IS ownership.
-    setOwnerAuthenticated(true);
-    auditRepo.log('unlock', 'app', undefined, 'Unlocked with password');
+    if (kind === 'master') {
+      setOwnerAuthenticated(true);
+    } else {
+      setDailyAuthenticated();
+    }
+    auditRepo.log('unlock', 'app', undefined,
+      kind === 'master' ? 'Unlocked with the master password' : 'Unlocked with the daily password');
     return {
       initialized: true, unlocked: true,
       licenseState: ctx.license.state(), language: loadConfig().language,
@@ -191,6 +205,60 @@ export function registerIpcHandlers(ctx: AppContext): void {
     return null;
   });
 
+  // ---- the two passwords --------------------------------------------------
+  /**
+   * Who is using the app right now, and what may they do?
+   *
+   * The renderer uses this to hide owner-only controls. Hiding is a courtesy:
+   * the same rule is enforced on every channel in `assertAllowed`.
+   */
+  handle('auth:sessionInfo', () => ({
+    unlocked: ctx.secure.isUnlocked(),
+    isOwner: isOwnerSession(),
+    hasDailyPassword: ctx.secure.hasDailyPassword(),
+    userAccountsEnabled: USER_ACCOUNTS_ENABLED,
+  }));
+
+  /**
+   * Prove ownership without locking and reopening the app.
+   *
+   * The shop opens with the daily password in the morning; when the owner then
+   * wants to change a setting, he types the master password here and the
+   * session is upgraded for as long as the app stays open.
+   */
+  handle('auth:elevate', (masterPassword: string) => {
+    requireUnlocked(ctx);
+    if (!ctx.secure.verifyMasterPassword(masterPassword)) throw new Error('WRONG_PASSWORD');
+    setOwnerAuthenticated(true);
+    auditRepo.log('elevate', 'app', undefined, 'Owner authorised with the master password');
+    return { isOwner: true };
+  });
+
+  /** Step back down to a daily session (e.g. the owner leaves the counter). */
+  handle('auth:dropOwner', () => {
+    requireUnlocked(ctx);
+    setDailyAuthenticated();
+    return { isOwner: false };
+  });
+
+  handle('auth:setDailyPassword', (masterPassword: string, dailyPassword: string) => {
+    requireUnlocked(ctx);
+    if (!dailyPassword || dailyPassword.length < 4) throw new Error('PASSWORD_TOO_SHORT');
+    // Refuse to make the two secrets identical: that would silently hand every
+    // member of staff the owner's authority.
+    if (ctx.secure.verifyMasterPassword(dailyPassword)) throw new Error('DAILY_MUST_DIFFER');
+    if (!ctx.secure.setDailyPassword(masterPassword, dailyPassword)) throw new Error('WRONG_PASSWORD');
+    auditRepo.log('set_daily_password', 'app', undefined, 'Daily password set');
+    return null;
+  });
+
+  handle('auth:clearDailyPassword', (masterPassword: string) => {
+    requireUnlocked(ctx);
+    if (!ctx.secure.clearDailyPassword(masterPassword)) throw new Error('WRONG_PASSWORD');
+    auditRepo.log('clear_daily_password', 'app', undefined, 'Daily password removed');
+    return null;
+  });
+
   /**
    * Sign in as one of the configured users.
    *
@@ -200,6 +268,7 @@ export function registerIpcHandlers(ctx: AppContext): void {
    * existing installation is unaffected.
    */
   handle('auth:listUsers', () => {
+    assertFeatureEnabled(USER_ACCOUNTS_ENABLED);
     requireUnlocked(ctx);
     const rows = getDb().prepare(
       'SELECT id, username, display_name, role FROM users WHERE active = 1 ORDER BY display_name',
@@ -210,6 +279,7 @@ export function registerIpcHandlers(ctx: AppContext): void {
   });
 
   handle('auth:signIn', (userId: string, password: string) => {
+    assertFeatureEnabled(USER_ACCOUNTS_ENABLED);
     requireUnlocked(ctx);
     const bcrypt = require('bcryptjs') as typeof import('bcryptjs');
     const row = getDb().prepare(
@@ -228,6 +298,7 @@ export function registerIpcHandlers(ctx: AppContext): void {
   });
 
   handle('auth:signOut', () => {
+    assertFeatureEnabled(USER_ACCOUNTS_ENABLED);
     const id = getCurrentUserId();
     // Back to the owner session (the master password is still held), not to a
     // permission-less state — the owner never signed out of the machine.
@@ -237,6 +308,15 @@ export function registerIpcHandlers(ctx: AppContext): void {
   });
 
   handle('auth:currentUser', () => {
+    if (!USER_ACCOUNTS_ENABLED) {
+      // No user accounts: the session is described purely by which password
+      // opened the app.
+      if (!isUnlockedSession()) return null;
+      return {
+        id: null, username: isOwnerSession() ? 'owner' : 'shop',
+        displayName: '', role: 'admin' as const, isOwner: isOwnerSession(),
+      };
+    }
     const id = getCurrentUserId();
     // No staff id => the owner session established by the master password.
     if (!id) return isOwnerSession() ? { id: null, username: 'owner', displayName: '', role: 'admin' as const, isOwner: true } : null;
@@ -604,6 +684,7 @@ export function registerIpcHandlers(ctx: AppContext): void {
 
   // ---- users (roles) -----------------------------------------------------
   handle('users:list', () => {
+    assertFeatureEnabled(USER_ACCOUNTS_ENABLED);
     requireUnlocked(ctx);
     return getDb().prepare('SELECT id, username, display_name, role, active, created_at FROM users ORDER BY username')
       .all().map((r: any) => ({
@@ -612,6 +693,7 @@ export function registerIpcHandlers(ctx: AppContext): void {
       }));
   });
   handle('users:save', async (input: any, password?: string) => {
+    assertFeatureEnabled(USER_ACCOUNTS_ENABLED);
     requireUnlocked(ctx);
     const bcrypt = require('bcryptjs') as typeof import('bcryptjs');
     const db = getDb();
@@ -653,6 +735,7 @@ export function registerIpcHandlers(ctx: AppContext): void {
     return { id: r.id, username: r.username, displayName: r.display_name, role: r.role, active: !!r.active, createdAt: r.created_at };
   });
   handle('users:remove', (id: string) => {
+    assertFeatureEnabled(USER_ACCOUNTS_ENABLED);
     requireUnlocked(ctx);
     // Safe to remove any account: the owner retains admin through the master
     // password, so deleting staff can never lock the shop out.

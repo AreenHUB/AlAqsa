@@ -43,8 +43,11 @@ export function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
   return (
     <AuthShell title={t.auth.unlockTitle} subtitle={t.auth.unlockIntro}>
       <div className="col gap-16">
+        {/* Either the daily or the master password opens the app, so the field
+            is labelled neutrally — staff must not be told to enter the
+            owner's secret. */}
         <Field
-          label={mode === 'password' ? t.auth.masterPassword : t.auth.recoveryKey}
+          label={mode === 'password' ? t.auth.password : t.auth.recoveryKey}
           error={error || undefined}
         >
           <TextInput

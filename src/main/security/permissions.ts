@@ -12,6 +12,7 @@
 // ============================================================================
 
 import type { Role } from '@shared/types';
+import { USER_ACCOUNTS_ENABLED, OWNER_ONLY_CHANNELS } from '@shared/featureFlags';
 
 /** Coarse capability buckets a channel can require. */
 export type Capability =
@@ -106,23 +107,27 @@ export function capabilityFor(channel: string): Capability {
 }
 
 /**
- * The signed-in identity for this session.
+ * The identity of the current session.
  *
- * There are exactly two ways to obtain a role:
+ * ── Current model (user accounts are hidden) ───────────────────────────────
+ * The shop uses two passwords, and nothing else:
  *
- *  1. THE OWNER — proves it by entering the master password, which is the key
- *     that decrypts the database. Nobody else can open the app at all, so
- *     whoever holds it is by definition the owner and gets 'admin'. Asking
- *     them for a second, separate password would add friction without adding
- *     security: they already hold the strongest secret in the system.
+ *  1. THE DAILY PASSWORD — everyone in the shop knows it. It opens and locks
+ *     the app and grants full use of the day-to-day work: clients, visits,
+ *     devices, invoices, reports.
  *
- *  2. A STAFF MEMBER — picks their name and enters THEIR OWN password. They
- *     never need the master password; the owner unlocks the machine once and
- *     staff sign in and out on top of that.
+ *  2. THE MASTER PASSWORD — the owner alone knows it. It also opens the app,
+ *     and additionally authorises the sensitive operations: factory reset,
+ *     changing either password, making this PC the network host, backups and
+ *     the licence.
  *
- * SECURITY: a session that has done neither has NO role. An earlier version
- * defaulted to 'admin' for unauthenticated sessions, which let anyone skip the
- * sign-in screen and act as an administrator.
+ * So the question this module answers is no longer "which role is this?" but
+ * "was the app opened by the owner?".
+ *
+ * ── The role machinery below is intentionally still here ───────────────────
+ * MATRIX, roleHas and CHANNEL_CAPS are kept complete and working so that user
+ * accounts can be switched back on later without rebuilding them. They are
+ * simply not consulted while USER_ACCOUNTS_ENABLED is false.
  */
 let currentRole: Role | null = null;
 let currentUserId: string | null = null;
@@ -130,17 +135,49 @@ let currentUserId: string | null = null;
 /** True once the master password has been entered in this session. */
 let ownerAuthenticated = false;
 
+/**
+ * True once the app has been opened with EITHER password.
+ *
+ * Tracked separately from `ownerAuthenticated`: a daily-password session is a
+ * fully authenticated user of the shop, it just may not perform owner-only
+ * operations.
+ */
+let unlocked = false;
+
 export function setOwnerAuthenticated(value: boolean): void {
   ownerAuthenticated = value;
   if (value) {
+    unlocked = true;
     // Unlocking starts as the owner; a staff sign-in replaces this.
     currentUserId = null;
     currentRole = 'admin';
   }
 }
 
+/**
+ * Record that the app was opened with the shared DAILY password.
+ *
+ * This is a real, authenticated session — the holder may do all ordinary shop
+ * work — but it is not the owner, so owner-only channels stay closed.
+ */
+export function setDailyAuthenticated(): void {
+  unlocked = true;
+  ownerAuthenticated = false;
+  currentUserId = null;
+  // Full day-to-day access; 'admin' here means "not restricted by role",
+  // which is meaningful only if roles are ever switched back on. Owner-only
+  // operations are gated by ownerAuthenticated, not by this.
+  currentRole = 'admin';
+}
+
 export function isOwnerSession(): boolean {
+  if (!USER_ACCOUNTS_ENABLED) return ownerAuthenticated;
   return ownerAuthenticated && currentUserId === null;
+}
+
+/** True when the app has been opened with either password. */
+export function isUnlockedSession(): boolean {
+  return unlocked;
 }
 
 export function setCurrentUser(id: string | null, role: Role | null): void {
@@ -166,14 +203,36 @@ export function returnToOwner(): void {
 /** Clear everything (called when the app locks). */
 export function clearSession(): void {
   ownerAuthenticated = false;
+  unlocked = false;
   currentUserId = null;
   currentRole = null;
 }
 
 export function assertAllowed(channel: string): void {
+  if (!USER_ACCOUNTS_ENABLED) {
+    // Two-password model: the app must be open, and owner-only operations
+    // additionally require that it was opened with the master password.
+    if (!unlocked) throw new Error('NOT_SIGNED_IN');
+    if (OWNER_ONLY_CHANNELS.includes(channel) && !ownerAuthenticated) {
+      throw new Error('OWNER_PASSWORD_REQUIRED');
+    }
+    return;
+  }
+
   const role = getCurrentRole();
   if (!role) throw new Error('NOT_SIGNED_IN');
   if (!roleHas(role, capabilityFor(channel))) {
     throw new Error('FORBIDDEN');
   }
+}
+
+/**
+ * Refuse a channel that belongs to a disabled feature.
+ *
+ * Hiding the UI is not enough: the IPC channel still exists, so anything that
+ * can reach the bridge could still call it. Handlers for flagged-off features
+ * call this first.
+ */
+export function assertFeatureEnabled(enabled: boolean): void {
+  if (!enabled) throw new Error('FEATURE_DISABLED');
 }
