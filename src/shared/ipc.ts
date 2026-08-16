@@ -5,7 +5,7 @@
 import type {
   Client, Contact, Branch, Device, DocumentRecord, CameraLicense,
   Visit, InventoryItem, AmcContract, Invoice, Reminder, AppUser,
-  AuditEntry, StatusLabel, MediaRef, StaffMember, NoteEntry, Role, StockUnit,
+  AuditEntry, StatusLabel, MediaRef, StaffMember, NoteEntry, Role, StockUnit, ExportRecord,
 } from './types';
 
 export interface StaffActivity {
@@ -203,6 +203,18 @@ export interface IpcApi {
       duplicateSerials?: number;
       productsTouched?: number;
     }>>;
+  };
+  /**
+   * Files the app has produced. Gives every client one place showing what was
+   * exported for them, where it is, and how to open, share or print it again.
+   */
+  exports: {
+    listByClient(clientId: string): Promise<Result<ExportRecord[]>>;
+    recent(limit?: number): Promise<Result<ExportRecord[]>>;
+    open(filePath: string): Promise<Result<null>>;
+    revealInFolder(filePath: string): Promise<Result<null>>;
+    openFolder(): Promise<Result<{ path: string }>>;
+    remove(id: string): Promise<Result<null>>;
   };
   /** Individual units in the shop, each identified by its serial number. */
   stock: {

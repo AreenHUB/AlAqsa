@@ -147,6 +147,30 @@ export const translations = {
       switchUser: 'تبديل المستخدم',
     },
 
+    // سجل الملفات المصدَّرة لكل عميل
+    exports: {
+      title: 'الملفات المصدَّرة',
+      subtitle: 'كل التقارير والملفات التي أُنشئت لهذا العميل، ومكان حفظها',
+      kind: 'النوع',
+      fileName: 'اسم الملف',
+      size: 'الحجم',
+      none: 'لم يتم تصدير أي ملف لهذا العميل بعد',
+      noneHint: 'عند إنشاء تقرير زيارة أو اتفاقية أو فاتورة سيظهر هنا مع مساره.',
+      open: 'فتح الملف',
+      reveal: 'إظهار في المجلد',
+      openFolder: 'فتح مجلد التقارير',
+      missing: 'الملف غير موجود',
+      forget: 'إزالة من السجل',
+      forgotten: 'تمت إزالته من السجل (الملف لم يُحذف)',
+      kinds: {
+        visit_pdf: 'تقرير زيارة',
+        agreement_pdf: 'تقرير اتفاقية',
+        invoice_pdf: 'فاتورة',
+        client_excel: 'بيانات العميل Excel',
+        full_excel: 'تصدير كامل Excel',
+      },
+    },
+
     // مخزون الأرقام التسلسلية — قطعة واحدة لكل سطر
     stock: {
       title: 'القطع بالأرقام التسلسلية',
@@ -511,6 +535,8 @@ export const translations = {
       whatsAppHint: 'سيتم فتح المحادثة مع رسالة جاهزة، والملف جاهز للإرفاق',
       selectPhone: 'اختر رقم الهاتف',
       messageText: 'نص الرسالة',
+      print: 'طباعة',
+      sentToPrinter: 'تم إرسال الملف إلى الطابعة',
     },
 
     // Settings
@@ -830,6 +856,29 @@ export const translations = {
       noStaffYet: 'No staff accounts yet. Add them in Settings → Users.',
       staffPasswordHint: 'Enter this account’s password — the master password is not needed.',
       switchUser: 'Switch user',
+    },
+
+    exports: {
+      title: 'Exported files',
+      subtitle: 'Every report and file produced for this client, and where it was saved',
+      kind: 'Type',
+      fileName: 'File name',
+      size: 'Size',
+      none: 'No files exported for this client yet',
+      noneHint: 'When you generate a visit report, agreement or invoice it will appear here with its path.',
+      open: 'Open file',
+      reveal: 'Show in folder',
+      openFolder: 'Open reports folder',
+      missing: 'File missing',
+      forget: 'Remove from history',
+      forgotten: 'Removed from the history (the file was not deleted)',
+      kinds: {
+        visit_pdf: 'Visit report',
+        agreement_pdf: 'Agreement report',
+        invoice_pdf: 'Invoice',
+        client_excel: 'Client data (Excel)',
+        full_excel: 'Full export (Excel)',
+      },
     },
 
     stock: {
@@ -1174,6 +1223,8 @@ export const translations = {
       whatsAppHint: 'The chat will open with a ready message, and the file ready to attach',
       selectPhone: 'Select phone number',
       messageText: 'Message text',
+      print: 'Print',
+      sentToPrinter: 'Sent to the printer',
     },
 
     settings: {

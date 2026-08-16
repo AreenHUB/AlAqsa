@@ -24,13 +24,15 @@ export function normalizePhone(raw: string): string {
 }
 
 export async function shareViaWhatsApp(pdfPath: string, phone: string, message: string): Promise<void> {
+  // Refuse rather than open an empty chat: WhatsApp cannot attach a file the
+  // app never produced, and the sender would believe the report went out.
+  if (!pdfPath || !fs.existsSync(pdfPath)) throw new Error('FILE_NOT_FOUND');
+
   const digits = normalizePhone(phone);
   const text = encodeURIComponent(message);
 
   // Reveal the PDF so it is ready to attach.
-  if (pdfPath && fs.existsSync(pdfPath)) {
-    shell.showItemInFolder(pdfPath);
-  }
+  shell.showItemInFolder(pdfPath);
 
   // `whatsapp://` opens WhatsApp Desktop when installed; otherwise fall back to
   // the web client. Opening the protocol URL first is harmless if unregistered.

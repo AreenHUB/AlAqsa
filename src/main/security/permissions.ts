@@ -62,6 +62,7 @@ const CHANNEL_CAPS: Record<string, Capability> = {
   'stock:upsert': 'write:ops',
   'stock:remove': 'write:ops',
   'stock:returnToStock': 'write:ops',
+  'exports:remove': 'write:ops',
   'reminders:save': 'write:ops',
   'reminders:markDone': 'write:ops',
   'reminders:remove': 'write:ops',

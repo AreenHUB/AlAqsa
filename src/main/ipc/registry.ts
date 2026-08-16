@@ -19,7 +19,7 @@ import { visitsRepo } from '../db/repositories/visitsRepo';
 import {
   documentsRepo, camLicenseRepo, inventoryRepo, amcRepo, invoicesRepo,
   remindersRepo, statusLabelsRepo, settingsRepo, auditRepo, searchRepo,
-  dashboardRepo, mediaRepo, stockUnitsRepo,
+  dashboardRepo, mediaRepo, stockUnitsRepo, exportsRepo,
 } from '../db/repositories/miscRepo';
 import { importFile, materializeToTemp, dataUrlToBuffer, writeEncrypted, deleteStored } from '../storage/fileStore';
 import { dataDir, filesDir, backupsDir, reportsDir, secureStorePath, dbPath } from '../storage/paths';
@@ -649,31 +649,50 @@ export function registerIpcHandlers(ctx: AppContext): void {
   handle('reports:visitPdf', async (visitId: string) => {
     requireUnlocked(ctx);
     const p = await generateVisitPdf(visitId, ctx.secure.getDek());
+    const visit = visitsRepo.get(visitId);
+    exportsRepo.record({
+      clientId: visit?.clientId, kind: 'visit_pdf', filePath: p,
+      refId: visitId, title: visit?.visitDate,
+    });
     auditRepo.log('export', 'visit_report', visitId, p);
+    notifyDataChanged(ctx, 'exports');
     return { path: p };
   });
   handle('reports:agreementPdf', async (clientId: string) => {
     requireUnlocked(ctx);
     const p = await generateAgreementPdf(clientId);
+    exportsRepo.record({ clientId, kind: 'agreement_pdf', filePath: p });
     auditRepo.log('export', 'agreement', clientId, p);
+    notifyDataChanged(ctx, 'exports');
     return { path: p };
   });
   handle('reports:invoicePdf', async (invoiceId: string) => {
     requireUnlocked(ctx);
     const p = await generateInvoicePdf(invoiceId);
+    const inv = invoicesRepo.get(invoiceId);
+    exportsRepo.record({
+      clientId: inv?.clientId, kind: 'invoice_pdf', filePath: p,
+      refId: invoiceId, title: inv?.number,
+    });
     auditRepo.log('export', 'invoice', invoiceId, p);
+    notifyDataChanged(ctx, 'exports');
     return { path: p };
   });
   handle('reports:exportClientExcel', async (clientId: string) => {
     requireUnlocked(ctx);
     const p = await exportClientExcel(clientId);
+    exportsRepo.record({ clientId, kind: 'client_excel', filePath: p });
     auditRepo.log('export', 'client_excel', clientId, p);
+    notifyDataChanged(ctx, 'exports');
     return { path: p };
   });
   handle('reports:exportAllExcel', async () => {
     requireUnlocked(ctx);
     const p = await exportAllExcel();
+    // No client: this file covers the whole shop.
+    exportsRepo.record({ kind: 'full_excel', filePath: p });
     auditRepo.log('export', 'all_excel', undefined, p);
+    notifyDataChanged(ctx, 'exports');
     return { path: p };
   });
   handle('reports:shareWhatsApp', async (pdfPath: string, phone: string, message: string) => {
@@ -684,6 +703,43 @@ export function registerIpcHandlers(ctx: AppContext): void {
   handle('reports:print', async (pdfPath: string) => {
     requireUnlocked(ctx);
     await printFile(pdfPath);
+    return null;
+  });
+
+  // ---- export history ----------------------------------------------------
+  handle('exports:listByClient', (clientId: string) => {
+    requireUnlocked(ctx); return exportsRepo.listByClient(clientId);
+  });
+  handle('exports:recent', (limit?: number) => {
+    requireUnlocked(ctx); return exportsRepo.recent(limit ?? 100);
+  });
+  /** Open the file in whatever the system uses for it. */
+  handle('exports:open', async (filePath: string) => {
+    requireUnlocked(ctx);
+    if (!fs.existsSync(filePath)) throw new Error('FILE_NOT_FOUND');
+    const e = await shell.openPath(filePath);
+    if (e) throw new Error('FILE_ACCESS_FAILED');
+    return null;
+  });
+  /** Reveal the file in Explorer, which answers "where is it?" directly. */
+  handle('exports:revealInFolder', (filePath: string) => {
+    requireUnlocked(ctx);
+    if (!fs.existsSync(filePath)) throw new Error('FILE_NOT_FOUND');
+    shell.showItemInFolder(filePath);
+    return null;
+  });
+  /** Open the reports folder itself. */
+  handle('exports:openFolder', async () => {
+    requireUnlocked(ctx);
+    const e = await shell.openPath(reportsDir());
+    if (e) throw new Error('FILE_ACCESS_FAILED');
+    return { path: reportsDir() };
+  });
+  /** Forget a history entry. The file on disk is left alone. */
+  handle('exports:remove', (id: string) => {
+    requireUnlocked(ctx);
+    exportsRepo.remove(id);
+    notifyDataChanged(ctx, 'exports');
     return null;
   });
 

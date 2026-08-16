@@ -3,14 +3,20 @@
 // AMC, invoices, reminders, status labels, settings, audit, search, dashboard.
 // ============================================================================
 
+import fs from 'node:fs';
 import { getDb } from '../database';
 import { uuid, now, toBool, fromBool, parseJson } from '../helpers';
+
 import type {
   MediaRef, DocumentRecord, CameraLicense, InventoryItem, AmcContract,
   Invoice, Reminder, StatusLabel, AuditEntry, Client, Branch, Device, Contact,
-  StockUnit,
+  StockUnit, ExportRecord,
 } from '@shared/types';
 import type { DashboardStats, GlobalSearchResult } from '@shared/ipc';
+
+/** Disk helpers for the export history (kept tiny and failure-tolerant). */
+const fsExists = (p: string): boolean => { try { return fs.existsSync(p); } catch { return false; } };
+const fsSize = (p: string): number | null => { try { return fs.statSync(p).size; } catch { return null; } };
 
 // ---------------------------------------------------------------------------
 // Media
@@ -172,6 +178,77 @@ export const inventoryRepo = {
   },
   remove(id: string): void {
     getDb().prepare('DELETE FROM inventory WHERE id = ?').run(id);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Exports — the history of files produced for a client.
+// ---------------------------------------------------------------------------
+function mapExport(r: any): ExportRecord {
+  return {
+    id: r.id, clientId: r.client_id ?? undefined, kind: r.kind,
+    fileName: r.file_name, filePath: r.file_path,
+    sizeBytes: r.size_bytes ?? undefined, refId: r.ref_id ?? undefined,
+    title: r.title ?? undefined, createdAt: r.created_at,
+  };
+}
+
+export const exportsRepo = {
+  record(input: {
+    clientId?: string; kind: string; filePath: string;
+    refId?: string; title?: string;
+  }): ExportRecord {
+    const id = uuid();
+    const ts = now();
+    const fileName = input.filePath.split(/[\\/]/).pop() ?? input.filePath;
+    let size: number | null = null;
+    try { size = fsSize(input.filePath); } catch { /* not fatal */ }
+    getDb().prepare(
+      `INSERT INTO exports (id, client_id, kind, file_name, file_path, size_bytes,
+       ref_id, title, created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+    ).run(id, input.clientId ?? null, input.kind, fileName, input.filePath,
+      size, input.refId ?? null, input.title ?? null, ts);
+    return this.get(id)!;
+  },
+
+  get(id: string): ExportRecord | null {
+    const r = getDb().prepare('SELECT * FROM exports WHERE id = ?').get(id) as any;
+    return r ? mapExport(r) : null;
+  },
+
+  /**
+   * Files exported for one client, newest first.
+   *
+   * `exists` is checked against the disk on every read rather than stored:
+   * the owner can move or delete a file outside the app at any time, and a
+   * list offering to print something that is no longer there is worse than
+   * one that says so.
+   */
+  listByClient(clientId: string): ExportRecord[] {
+    const rows = getDb().prepare(
+      'SELECT * FROM exports WHERE client_id = ? ORDER BY created_at DESC LIMIT 200',
+    ).all(clientId) as any[];
+    return rows.map((r) => {
+      const rec = mapExport(r);
+      rec.exists = fsExists(rec.filePath);
+      return rec;
+    });
+  },
+
+  /** Everything exported recently, for the reports screen. */
+  recent(limit = 100): ExportRecord[] {
+    const rows = getDb().prepare(
+      'SELECT * FROM exports ORDER BY created_at DESC LIMIT ?',
+    ).all(limit) as any[];
+    return rows.map((r) => {
+      const rec = mapExport(r);
+      rec.exists = fsExists(rec.filePath);
+      return rec;
+    });
+  },
+
+  remove(id: string): void {
+    getDb().prepare('DELETE FROM exports WHERE id = ?').run(id);
   },
 };
 

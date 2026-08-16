@@ -374,4 +374,34 @@ MIGRATIONS.push({
   `,
 });
 
+// ---------------------------------------------------------------------------
+// v4 — a record of every file exported for a client.
+//
+// Reports were written to the reports folder and then forgotten: nothing in
+// the app could tell the owner what had been produced for a client, or where
+// it went. This table is that history, so each client has one place showing
+// their exported files with a path to reopen, share or print.
+// ---------------------------------------------------------------------------
+MIGRATIONS.push({
+  version: 4,
+  up: /* sql */ `
+    CREATE TABLE exports (
+      id TEXT PRIMARY KEY,
+      client_id TEXT,
+      -- visit_pdf | agreement_pdf | invoice_pdf | client_excel | full_excel
+      kind TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      size_bytes INTEGER,
+      -- The visit/invoice the file was produced from, when there is one.
+      ref_id TEXT,
+      title TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_exports_client ON exports(client_id);
+    CREATE INDEX idx_exports_created ON exports(created_at);
+  `,
+});
+
 export const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

@@ -63,33 +63,74 @@ function fontsDirectory(): string {
 
 const AR_RANGE = /[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/;
 
+/** U+00A0. pdfmake collapses plain spaces between Arabic words during layout. */
+const NBSP = ' ';
+const NEWLINE = '\n';
+
 /**
  * Prepare a string for RTL rendering.
  *
- * pdfmake places glyphs strictly left-to-right, so an Arabic line must be
- * reversed at the word level to read correctly. Splitting on the separators
- * while KEEPING them (capturing group) and reversing the whole token list
- * preserves the spaces — dropping them was what glued words together.
- * Latin/digit runs inside the line keep their own internal order.
+ * Two separate problems have to be handled, and only one of them is ours:
+ *
+ *  1. SPACING — pdfmake collapses runs of plain spaces between Arabic words
+ *     during layout, which glues them together. Joining with a non-breaking
+ *     space keeps the gap.
+ *
+ *  2. WORD ORDER — pdfmake already lays Arabic runs out right-to-left, so the
+ *     words must be left in their LOGICAL order. An earlier version reversed
+ *     them here too, which cancelled out pdfmake's own handling and printed
+ *     every heading backwards ("صيانة زيارة تقرير" for "تقرير زيارة صيانة").
+ *     Do not reverse.
+ *
+ *  3. EMBEDDED LATIN — when a line is mixed, pdfmake flips the WHOLE run,
+ *     including any Latin or numeric island inside it, so "Power Supply"
+ *     printed as "ylppuS rewoP" and "2026-07-20" as "20-70-6202". Those
+ *     islands are pre-reversed here so that pdfmake's flip restores them.
+ *     Their internal characters are reversed, and multi-word islands also have
+ *     their word order reversed, so both survive the flip intact.
+ *
+ * Strings with no Arabic are returned untouched, so a model number or a date
+ * still wraps where it legitimately should.
  */
+
+/** Latin letters, digits and the punctuation that binds them (dates, codes). */
+const LATIN_ISLAND = /[A-Za-z0-9][A-Za-z0-9\-_/.:+&'()]*(?: [A-Za-z0-9][A-Za-z0-9\-_/.:+&'()]*)*/g;
+
+/**
+ * Brackets are mirrored by the RTL flip: an opening one arrives as a closing
+ * one. Swapping them beforehand means they come out facing the right way.
+ */
+const MIRRORED: Record<string, string> = {
+  '(': ')', ')': '(', '[': ']', ']': '[', '{': '}', '}': '{',
+  '<': '>', '>': '<', '«': '»', '»': '«',
+};
+const MIRROR_RE = /[()[\]{}<>«»]/g;
+
+/** Reverse a Latin run so pdfmake's RTL flip puts it back the right way round. */
+function preReverseLatin(line: string): string {
+  return line.replace(LATIN_ISLAND, (island) => {
+    // A run of several Latin words needs its word order reversed as well as
+    // each word's characters, otherwise the flip returns the words backwards.
+    const words = island.split(' ');
+    return words
+      .map((w) => [...w].reverse().join(''))
+      .reverse()
+      .join(' ');
+  });
+}
+
 export function ar(text: string | number | undefined | null): string {
   if (text === undefined || text === null) return '';
   const s = String(text);
   if (!AR_RANGE.test(s)) return s;
-  // Join with U+00A0: pdfmake collapses/strips runs of plain spaces during
-  // layout, which would glue the reversed words together.
-  const NBSP = ' ';
   return s
-    .split('\n')
-    .map((line) =>
-      line
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean)
-        .reverse()
-        .join(NBSP),
-    )
-    .join('\n');
+    .split(NEWLINE)
+    .map((line) => {
+      const latinFixed = preReverseLatin(line.trim());
+      const bracketsFixed = latinFixed.replace(MIRROR_RE, (c) => MIRRORED[c] ?? c);
+      return bracketsFixed.split(/\s+/).filter(Boolean).join(NBSP);
+    })
+    .join(NEWLINE);
 }
 
 // The bundled Arabic font carries no dingbat glyphs (✔/✘ would render as empty
@@ -99,10 +140,13 @@ const tick = (b: boolean) => (b ? ar('نعم') : '—');
 function header(titleAr: string, subtitle?: string) {
   return [
     {
+      // Explicit halves. Auto-width columns size to their text and end up
+      // touching in the middle, which printed "الأقصىAlAqsa CCTV" as one word.
       columns: [
-        { text: ar(APP_NAME_AR), style: 'brand', alignment: 'right' },
-        { text: 'AlAqsa CCTV', style: 'brandEn', alignment: 'left' },
+        { width: '50%', text: 'AlAqsa CCTV', style: 'brandEn', alignment: 'left' },
+        { width: '50%', text: ar(APP_NAME_AR), style: 'brand', alignment: 'right' },
       ],
+      columnGap: 12,
     },
     { canvas: [{ type: 'line', x1: 0, y1: 4, x2: 515, y2: 4, lineWidth: 2, lineColor: '#0B4F8A' }] },
     { text: ar(titleAr), style: 'title', alignment: 'right', margin: [0, 10, 0, 2] },
@@ -113,8 +157,8 @@ function header(titleAr: string, subtitle?: string) {
 function footer(currentPage: number, pageCount: number) {
   return {
     columns: [
-      { text: `${currentPage} / ${pageCount}`, alignment: 'left', fontSize: 8, color: '#6b7280' },
-      { text: ar(`${APP_NAME_AR} — هاتف: ${AUTHOR.phone}`), alignment: 'right', fontSize: 8, color: '#6b7280' },
+      { width: 60, text: `${currentPage} / ${pageCount}`, alignment: 'left', fontSize: 8, color: '#6b7280' },
+      { width: '*', text: ar(`${APP_NAME_AR} — هاتف: ${AUTHOR.phone}`), alignment: 'right', fontSize: 8, color: '#6b7280' },
     ],
     margin: [40, 10, 40, 0],
   };
@@ -179,7 +223,9 @@ function buildVisitDoc(visit: Visit, devices: Device[]) {
     content.push({
       table: {
         headerRows: 1,
-        widths: [50, 38, 38, 38, 45, '*', '*', 55, 28],
+        // The serial and model carry long unbroken Latin codes, so they get
+        // fixed generous widths and the notes column absorbs what is left.
+        widths: ['*', 32, 32, 32, 42, 78, 78, 52, 20],
         body: [
           ['ملاحظات', 'الشبكة', 'الصورة', 'العدسة', 'الحالة', 'الرقم التسلسلي', 'الموديل', 'الموقع', 'م']
             .map((h) => ({ text: ar(h), style: 'th', alignment: 'right' })),
@@ -195,8 +241,10 @@ function buildVisitDoc(visit: Visit, devices: Device[]) {
                 alignment: 'center', fontSize: 8,
                 color: chk?.status === 'needs_service' ? '#b91c1c' : '#15803d',
               },
-              { text: c.serialNumber ?? '—', alignment: 'right', fontSize: 8 },
-              { text: c.model ?? '—', alignment: 'right', fontSize: 8 },
+              // Serials and model codes are Latin: keep them left-to-right and
+              // let pdfmake break long ones rather than overflow the cell.
+              { text: c.serialNumber ?? '—', alignment: 'left', fontSize: 7.5, noWrap: false },
+              { text: c.model ?? '—', alignment: 'left', fontSize: 7.5, noWrap: false },
               { text: ar(c.positionInBranch ?? c.label ?? ''), alignment: 'right', fontSize: 8 },
               { text: String(i + 1), alignment: 'center', fontSize: 8 },
             ];

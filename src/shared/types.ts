@@ -252,6 +252,24 @@ export interface Visit {
 // Inventory (shop stock — feeds autocomplete)
 // ---------------------------------------------------------------------------
 
+export type ExportKind =
+  | 'visit_pdf' | 'agreement_pdf' | 'invoice_pdf' | 'client_excel' | 'full_excel';
+
+/** A file the app produced, kept so the owner can find it again. */
+export interface ExportRecord {
+  id: UUID;
+  clientId?: UUID;
+  kind: ExportKind;
+  fileName: string;
+  filePath: string;
+  sizeBytes?: number;
+  refId?: UUID;
+  title?: string;
+  createdAt: ISODate;
+  /** False once the file has been moved or deleted outside the app. */
+  exists?: boolean;
+}
+
 /** Where a physical unit currently is. */
 export type StockStatus = 'in_stock' | 'installed' | 'returned' | 'faulty';
 

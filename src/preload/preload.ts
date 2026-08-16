@@ -16,6 +16,7 @@ const API_MAP: Record<string, string[]> = {
   licenses: ['listByClient', 'save', 'remove'],
   visits: ['listByClient', 'listByBranch', 'get', 'create', 'update', 'remove'],
   inventory: ['list', 'upsert', 'remove', 'importExcel'],
+  exports: ['listByClient', 'recent', 'open', 'revealInFolder', 'openFolder', 'remove'],
   stock: ['lookupSerial', 'list', 'get', 'counts', 'upsert', 'remove', 'returnToStock'],
   amc: ['listByClient', 'save', 'remove'],
   invoices: ['listByClient', 'save', 'remove'],
