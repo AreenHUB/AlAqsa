@@ -11,6 +11,7 @@ import {
 } from '../components/ui';
 import { StaffTab } from '../components/StaffTab';
 import { LicenseTab } from '../components/LicenseTab';
+import { RequirementTemplatesTab } from '../components/RequirementsPanel';
 import { USER_ACCOUNTS_ENABLED } from '@shared/featureFlags';
 import type { StatusLabel, AppUser, AuditEntry } from '@shared/types';
 import type { SessionInfo } from '@shared/ipc';
@@ -60,6 +61,7 @@ export function SettingsScreen({ onLock }: { onLock: () => void }) {
     { id: 'security', label: t.settings.security },
     { id: 'labels', label: t.settings.statusLabels },
     { id: 'staff', label: t.staff.title },
+    { id: 'requirements', label: t.requirements.title },
     { id: 'network', label: t.settings.network },
     { id: 'license', label: t.license.title },
     { id: 'data', label: t.settings.dataManagement },
@@ -78,6 +80,7 @@ export function SettingsScreen({ onLock }: { onLock: () => void }) {
       {tab === 'security' && <SecurityTab onLock={onLock} isOwner={isOwner} />}
       {tab === 'labels' && <LabelsTab />}
       {tab === 'staff' && <StaffTab />}
+      {tab === 'requirements' && <RequirementTemplatesTab />}
       {/* Owner-only: these change the machine, the data, or reveal the log. */}
       {tab === 'network' && (isOwner ? <NetworkTab /> : <OwnerOnlyNotice />)}
       {tab === 'license' && (isOwner ? <LicenseTab /> : <OwnerOnlyNotice />)}

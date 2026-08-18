@@ -15,6 +15,7 @@ import { ClientsScreen } from './screens/ClientsScreen';
 import { ClientDetailScreen } from './screens/ClientDetailScreen';
 import { VisitsScreen } from './screens/VisitsScreen';
 import { InventoryScreen } from './screens/InventoryScreen';
+import { DayJobsScreen } from './screens/DayJobsScreen';
 import { RemindersScreen } from './screens/RemindersScreen';
 import { ReportsScreen } from './screens/ReportsScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
@@ -26,6 +27,7 @@ export type Route =
   | { name: 'clients' }
   | { name: 'client'; id: string; tab?: string }
   | { name: 'visits' }
+  | { name: 'dayJobs' }
   | { name: 'inventory' }
   | { name: 'reminders' }
   | { name: 'reports' }
@@ -104,6 +106,7 @@ export function Shell({ onLock }: { onLock: () => void }) {
     { id: 'dashboard', icon: '🏠', label: t.nav.dashboard },
     { id: 'clients', icon: '👥', label: t.nav.clients },
     { id: 'visits', icon: '🛠', label: t.nav.visits },
+    { id: 'dayJobs', icon: '🗓', label: t.nav.dayJobs },
     { id: 'inventory', icon: '📦', label: t.nav.inventory },
     { id: 'reminders', icon: '🔔', label: t.nav.reminders },
     { id: 'reports', icon: '📄', label: t.nav.reports },
@@ -257,6 +260,7 @@ export function Shell({ onLock }: { onLock: () => void }) {
             <ClientDetailScreen clientId={route.id} initialTab={route.tab} navigate={navigate} />
           )}
           {route.name === 'visits' && <VisitsScreen navigate={navigate} />}
+          {route.name === 'dayJobs' && <DayJobsScreen />}
           {route.name === 'inventory' && <InventoryScreen />}
           {route.name === 'reminders' && <RemindersScreen navigate={navigate} />}
           {route.name === 'reports' && <ReportsScreen navigate={navigate} />}

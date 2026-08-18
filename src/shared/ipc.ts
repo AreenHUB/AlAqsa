@@ -6,6 +6,7 @@ import type {
   Client, Contact, Branch, Device, DocumentRecord, CameraLicense,
   Visit, InventoryItem, AmcContract, Invoice, Reminder, AppUser,
   AuditEntry, StatusLabel, MediaRef, StaffMember, NoteEntry, Role, StockUnit, ExportRecord,
+  DayJob, RequirementTemplate, RequirementCase, Quotation,
 } from './types';
 
 export interface StaffActivity {
@@ -159,6 +160,10 @@ export interface IpcApi {
   };
   branches: {
     listByClient(clientId: string): Promise<Result<Branch[]>>;
+    /** The branch to attach to when the client has none of their own. */
+    ensureDefault(clientId: string): Promise<Result<Branch>>;
+    /** Whether this client has branches worth showing in the UI. */
+    hasReal(clientId: string): Promise<Result<boolean>>;
     create(input: Partial<Branch>): Promise<Result<Branch>>;
     update(id: string, patch: Partial<Branch>): Promise<Result<Branch>>;
     remove(id: string): Promise<Result<null>>;
@@ -203,6 +208,44 @@ export interface IpcApi {
       duplicateSerials?: number;
       productsTouched?: number;
     }>>;
+  };
+  /** The day's work schedule handed to the technicians each morning. */
+  dayJobs: {
+    listByDate(date: string): Promise<Result<DayJob[]>>;
+    listBetween(from: string, to: string): Promise<Result<DayJob[]>>;
+    listByClient(clientId: string): Promise<Result<DayJob[]>>;
+    get(id: string): Promise<Result<DayJob | null>>;
+    counts(date: string): Promise<Result<{ total: number; done: number; planned: number }>>;
+    save(input: Partial<DayJob> & { jobDate: string }): Promise<Result<DayJob>>;
+    setStatus(id: string, status: string): Promise<Result<null>>;
+    remove(id: string): Promise<Result<null>>;
+    /** Print the whole day as one sheet for the crew to carry. */
+    sheetPdf(date: string): Promise<Result<{ path: string }>>;
+  };
+  /** Reusable "what do we need for this job" checklists, and their use. */
+  requirements: {
+    listTemplates(includeInactive?: boolean): Promise<Result<RequirementTemplate[]>>;
+    getTemplate(id: string): Promise<Result<RequirementTemplate | null>>;
+    saveTemplate(input: Partial<RequirementTemplate>): Promise<Result<RequirementTemplate>>;
+    removeTemplate(id: string): Promise<Result<null>>;
+    listCases(clientId: string): Promise<Result<RequirementCase[]>>;
+    getCase(id: string): Promise<Result<RequirementCase | null>>;
+    createCase(clientId: string, templateId: string, title?: string): Promise<Result<RequirementCase>>;
+    saveCase(input: Partial<RequirementCase> & { clientId: string }): Promise<Result<RequirementCase>>;
+    setItemCollected(itemId: string, collected: boolean, documentId?: string): Promise<Result<null>>;
+    removeCase(id: string): Promise<Result<null>>;
+  };
+  /** Price offers, and turning an accepted one into an invoice. */
+  quotations: {
+    listByClient(clientId: string): Promise<Result<Quotation[]>>;
+    recent(limit?: number): Promise<Result<Quotation[]>>;
+    get(id: string): Promise<Result<Quotation | null>>;
+    nextNumber(): Promise<Result<string>>;
+    save(input: Partial<Quotation> & { clientId: string }): Promise<Result<Quotation>>;
+    setStatus(id: string, status: string): Promise<Result<null>>;
+    remove(id: string): Promise<Result<null>>;
+    convertToInvoice(id: string): Promise<Result<Invoice>>;
+    pdf(id: string): Promise<Result<{ path: string }>>;
   };
   /**
    * Files the app has produced. Gives every client one place showing what was

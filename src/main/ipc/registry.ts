@@ -21,6 +21,9 @@ import {
   remindersRepo, statusLabelsRepo, settingsRepo, auditRepo, searchRepo,
   dashboardRepo, mediaRepo, stockUnitsRepo, exportsRepo,
 } from '../db/repositories/miscRepo';
+import {
+  dayJobsRepo, requirementTemplatesRepo, requirementCasesRepo, quotationsRepo,
+} from '../db/repositories/workRepo';
 import { importFile, materializeToTemp, dataUrlToBuffer, writeEncrypted, deleteStored } from '../storage/fileStore';
 import { dataDir, filesDir, backupsDir, reportsDir, secureStorePath, dbPath } from '../storage/paths';
 import { APP_NAME, APP_VERSION, AUTHOR } from '@shared/constants';
@@ -32,7 +35,10 @@ import {
   isOwnerSession, isUnlockedSession, assertFeatureEnabled,
 } from '../security/permissions';
 import { USER_ACCOUNTS_ENABLED } from '@shared/featureFlags';
-import { generateVisitPdf, generateAgreementPdf, generateInvoicePdf } from '../services/pdfService';
+import {
+  generateVisitPdf, generateAgreementPdf, generateInvoicePdf,
+  generateQuotationPdf, generateDaySheetPdf,
+} from '../services/pdfService';
 import { exportClientExcel, exportAllExcel, importInventoryExcel } from '../services/excelService';
 import { shareViaWhatsApp, shareTextViaWhatsApp, printFile } from '../services/shareService';
 import { deviceQrDataUrl } from '../services/qrService';
@@ -62,6 +68,7 @@ function classifyError(e: unknown): { code: string; error: string } {
     'PASSWORD_REQUIRED', 'USER_NOT_FOUND', 'USER_HAS_NO_PASSWORD',
     'CANNOT_REMOVE_LAST_ADMIN',
     'OWNER_PASSWORD_REQUIRED', 'DAILY_MUST_DIFFER', 'FEATURE_DISABLED',
+    'ALREADY_INVOICED', 'NO_PDF_VIEWER',
   ];
   if (known.includes(raw)) return { code: raw, error: raw };
 
@@ -146,6 +153,43 @@ function syncInventoryQuantity(inventoryItemId?: string): void {
     "SELECT count(*) AS c FROM stock_units WHERE inventory_item_id = ? AND status = 'in_stock'",
   ).get(inventoryItemId) as { c: number };
   db.prepare('UPDATE inventory SET quantity = ? WHERE id = ?').run(c, inventoryItemId);
+}
+
+/**
+ * Consume the shop units fitted during a visit.
+ *
+ * A replaced part carries the NEW serial that went in. If that serial belongs
+ * to a unit still sitting in the shop, the visit is what took it out, so the
+ * unit is marked installed and the product count follows. Without this a
+ * technician could fit twenty cameras from stock and the shop would still
+ * believe they were on the shelf.
+ *
+ * Runs after the visit is stored, and never throws: a stock bookkeeping
+ * problem must not lose the visit record itself.
+ */
+function consumeReplacedParts(ctx: AppContext, visit: { id: string; branchId?: string; replacedParts?: { newSerial?: string }[] }): void {
+  try {
+    const parts = visit.replacedParts ?? [];
+    if (!parts.length) return;
+    const branch = visit.branchId ? branchesRepo.get(visit.branchId) : null;
+    let changed = false;
+
+    for (const p of parts) {
+      const serial = (p.newSerial ?? '').trim();
+      if (!serial) continue;
+      const unit = stockUnitsRepo.findBySerial(serial);
+      if (!unit || unit.status !== 'in_stock') continue;
+      stockUnitsRepo.markInstalled(unit.id, visit.id, branch?.clientId, visit.branchId);
+      syncInventoryQuantity(unit.inventoryItemId);
+      changed = true;
+    }
+    if (changed) {
+      notifyDataChanged(ctx, 'stock');
+      notifyDataChanged(ctx, 'inventory');
+    }
+  } catch (e) {
+    console.error('[AlAqsa] could not consume replaced parts:', e);
+  }
 }
 
 export function registerIpcHandlers(ctx: AppContext): void {
@@ -356,6 +400,11 @@ export function registerIpcHandlers(ctx: AppContext): void {
   handle('clients:create', (input) => {
     requireUnlocked(ctx);
     const c = clientsRepo.create(input);
+    // Most clients are a single site. Devices and visits must attach to a
+    // branch, so one is created here and hidden by the UI until the owner
+    // adds a real second branch — otherwise a new client cannot be worked on
+    // at all until someone invents a branch for them.
+    branchesRepo.ensureDefault(c.id);
     auditRepo.log('create', 'client', c.id, c.nameAr);
     notifyDataChanged(ctx, 'clients');
     return c;
@@ -384,6 +433,14 @@ export function registerIpcHandlers(ctx: AppContext): void {
 
   // ---- branches ----------------------------------------------------------
   handle('branches:listByClient', (clientId: string) => { requireUnlocked(ctx); return branchesRepo.listByClient(clientId); });
+  /** The branch to use when the client has none of their own. */
+  handle('branches:ensureDefault', (clientId: string) => {
+    requireUnlocked(ctx); return branchesRepo.ensureDefault(clientId);
+  });
+  /** Whether branches are worth showing for this client at all. */
+  handle('branches:hasReal', (clientId: string) => {
+    requireUnlocked(ctx); return branchesRepo.hasRealBranches(clientId);
+  });
   handle('branches:create', (input) => {
     requireUnlocked(ctx);
     const b = branchesRepo.create(input);
@@ -571,6 +628,7 @@ export function registerIpcHandlers(ctx: AppContext): void {
   handle('visits:create', (input) => {
     requireUnlocked(ctx);
     const v = visitsRepo.create(input);
+    consumeReplacedParts(ctx, v);
     auditRepo.log('create', 'visit', v.id, v.visitDate);
     notifyDataChanged(ctx, 'visits');
     return v;
@@ -578,6 +636,7 @@ export function registerIpcHandlers(ctx: AppContext): void {
   handle('visits:update', (id: string, patch) => {
     requireUnlocked(ctx);
     const v = visitsRepo.update(id, patch);
+    consumeReplacedParts(ctx, v);
     auditRepo.log('update', 'visit', id);
     notifyDataChanged(ctx, 'visits');
     return v;
@@ -706,6 +765,172 @@ export function registerIpcHandlers(ctx: AppContext): void {
     return null;
   });
 
+  // ---- daily work schedule ----------------------------------------------
+  handle('dayJobs:listByDate', (date: string) => {
+    requireUnlocked(ctx); return dayJobsRepo.listByDate(date);
+  });
+  handle('dayJobs:listBetween', (from: string, to: string) => {
+    requireUnlocked(ctx); return dayJobsRepo.listBetween(from, to);
+  });
+  handle('dayJobs:listByClient', (clientId: string) => {
+    requireUnlocked(ctx); return dayJobsRepo.listByClient(clientId);
+  });
+  handle('dayJobs:get', (id: string) => { requireUnlocked(ctx); return dayJobsRepo.get(id); });
+  handle('dayJobs:counts', (date: string) => {
+    requireUnlocked(ctx); return dayJobsRepo.countsForDate(date);
+  });
+  handle('dayJobs:save', (input: any) => {
+    requireUnlocked(ctx);
+    const j = dayJobsRepo.save(input);
+    auditRepo.log(input.id ? 'update' : 'create', 'day_job', j.id, j.placeName ?? j.clientName);
+    notifyDataChanged(ctx, 'dayJobs');
+    return j;
+  });
+  handle('dayJobs:setStatus', (id: string, status: string) => {
+    requireUnlocked(ctx);
+    dayJobsRepo.setStatus(id, status);
+    notifyDataChanged(ctx, 'dayJobs');
+    return null;
+  });
+  handle('dayJobs:remove', (id: string) => {
+    requireUnlocked(ctx);
+    dayJobsRepo.remove(id);
+    auditRepo.log('delete', 'day_job', id);
+    notifyDataChanged(ctx, 'dayJobs');
+    return null;
+  });
+  handle('dayJobs:sheetPdf', async (date: string) => {
+    requireUnlocked(ctx);
+    const p = await generateDaySheetPdf(date);
+    exportsRepo.record({ kind: 'day_sheet_pdf', filePath: p, title: date });
+    auditRepo.log('export', 'day_sheet', undefined, p);
+    notifyDataChanged(ctx, 'exports');
+    return { path: p };
+  });
+
+  // ---- requirement checklists -------------------------------------------
+  handle('requirements:listTemplates', (includeInactive?: boolean) => {
+    requireUnlocked(ctx); return requirementTemplatesRepo.list(!!includeInactive);
+  });
+  handle('requirements:getTemplate', (id: string) => {
+    requireUnlocked(ctx); return requirementTemplatesRepo.get(id);
+  });
+  handle('requirements:saveTemplate', (input: any) => {
+    requireUnlocked(ctx);
+    const t = requirementTemplatesRepo.save(input);
+    auditRepo.log(input.id ? 'update' : 'create', 'requirement_template', t.id, t.nameAr);
+    notifyDataChanged(ctx, 'requirements');
+    return t;
+  });
+  handle('requirements:removeTemplate', (id: string) => {
+    requireUnlocked(ctx);
+    requirementTemplatesRepo.remove(id);
+    auditRepo.log('delete', 'requirement_template', id);
+    notifyDataChanged(ctx, 'requirements');
+    return null;
+  });
+  handle('requirements:listCases', (clientId: string) => {
+    requireUnlocked(ctx); return requirementCasesRepo.listByClient(clientId);
+  });
+  handle('requirements:getCase', (id: string) => {
+    requireUnlocked(ctx); return requirementCasesRepo.get(id);
+  });
+  handle('requirements:createCase', (clientId: string, templateId: string, title?: string) => {
+    requireUnlocked(ctx);
+    const c = requirementCasesRepo.createFromTemplate(clientId, templateId, title);
+    auditRepo.log('create', 'requirement_case', c.id, c.title, clientId);
+    notifyDataChanged(ctx, 'requirements');
+    return c;
+  });
+  handle('requirements:saveCase', (input: any) => {
+    requireUnlocked(ctx);
+    const c = requirementCasesRepo.save(input);
+    notifyDataChanged(ctx, 'requirements');
+    return c;
+  });
+  handle('requirements:setItemCollected', (itemId: string, collected: boolean, documentId?: string) => {
+    requireUnlocked(ctx);
+    requirementCasesRepo.setItemCollected(itemId, collected, documentId);
+    notifyDataChanged(ctx, 'requirements');
+    return null;
+  });
+  handle('requirements:removeCase', (id: string) => {
+    requireUnlocked(ctx);
+    requirementCasesRepo.remove(id);
+    notifyDataChanged(ctx, 'requirements');
+    return null;
+  });
+
+  // ---- quotations --------------------------------------------------------
+  handle('quotations:listByClient', (clientId: string) => {
+    requireUnlocked(ctx); return quotationsRepo.listByClient(clientId);
+  });
+  handle('quotations:recent', (limit?: number) => {
+    requireUnlocked(ctx); return quotationsRepo.recent(limit ?? 100);
+  });
+  handle('quotations:get', (id: string) => { requireUnlocked(ctx); return quotationsRepo.get(id); });
+  handle('quotations:nextNumber', () => { requireUnlocked(ctx); return quotationsRepo.nextNumber(); });
+  handle('quotations:save', (input: any) => {
+    requireUnlocked(ctx);
+    const q = quotationsRepo.save(input);
+    auditRepo.log(input.id ? 'update' : 'create', 'quotation', q.id, q.number, q.clientId);
+    notifyDataChanged(ctx, 'quotations');
+    return q;
+  });
+  handle('quotations:setStatus', (id: string, status: string) => {
+    requireUnlocked(ctx);
+    quotationsRepo.setStatus(id, status);
+    notifyDataChanged(ctx, 'quotations');
+    return null;
+  });
+  handle('quotations:remove', (id: string) => {
+    requireUnlocked(ctx);
+    quotationsRepo.remove(id);
+    auditRepo.log('delete', 'quotation', id);
+    notifyDataChanged(ctx, 'quotations');
+    return null;
+  });
+  /**
+   * Turn an accepted quotation into an invoice, carrying the lines across so
+   * nothing is retyped and the two documents cannot disagree.
+   */
+  handle('quotations:convertToInvoice', (id: string) => {
+    requireUnlocked(ctx);
+    const q = quotationsRepo.get(id);
+    if (!q) throw new Error('NOT_FOUND');
+    if (q.invoiceId) throw new Error('ALREADY_INVOICED');
+    const inv = invoicesRepo.save({
+      clientId: q.clientId,
+      date: new Date().toISOString().slice(0, 10),
+      items: q.items.map((i) => ({
+        id: i.id, description: i.description, quantity: i.quantity, unitPrice: i.unitPrice,
+      })),
+      taxRate: q.taxRate,
+      trn: q.trn,
+      terms: q.terms,
+      notes: q.notes,
+      status: 'unpaid',
+      paid: 0,
+    } as never);
+    quotationsRepo.linkInvoice(id, inv.id);
+    auditRepo.log('convert', 'quotation', id, `-> invoice ${inv.number}`, q.clientId);
+    notifyDataChanged(ctx, 'quotations');
+    notifyDataChanged(ctx, 'invoices');
+    return inv;
+  });
+  handle('quotations:pdf', async (id: string) => {
+    requireUnlocked(ctx);
+    const p = await generateQuotationPdf(id);
+    const q = quotationsRepo.get(id);
+    exportsRepo.record({
+      clientId: q?.clientId, kind: 'quotation_pdf', filePath: p,
+      refId: id, title: q?.number,
+    });
+    auditRepo.log('export', 'quotation', id, p);
+    notifyDataChanged(ctx, 'exports');
+    return { path: p };
+  });
+
   // ---- export history ----------------------------------------------------
   handle('exports:listByClient', (clientId: string) => {
     requireUnlocked(ctx); return exportsRepo.listByClient(clientId);
@@ -714,11 +939,24 @@ export function registerIpcHandlers(ctx: AppContext): void {
     requireUnlocked(ctx); return exportsRepo.recent(limit ?? 100);
   });
   /** Open the file in whatever the system uses for it. */
+  /**
+   * Open an exported file.
+   *
+   * `shell.openPath` hands the file to whatever Windows has associated with
+   * it. On a PC with no PDF reader installed that association does not exist,
+   * so nothing happens and the button appears broken — which is exactly what
+   * the shop saw. Rather than fail, the file is shown in Explorer (the same
+   * thing the WhatsApp share does, which is why that one "worked") and a clear
+   * message explains why.
+   */
   handle('exports:open', async (filePath: string) => {
     requireUnlocked(ctx);
     if (!fs.existsSync(filePath)) throw new Error('FILE_NOT_FOUND');
     const e = await shell.openPath(filePath);
-    if (e) throw new Error('FILE_ACCESS_FAILED');
+    if (e) {
+      shell.showItemInFolder(filePath);
+      throw new Error('NO_PDF_VIEWER');
+    }
     return null;
   });
   /** Reveal the file in Explorer, which answers "where is it?" directly. */

@@ -42,6 +42,9 @@ export function ClientFormModal({
   const [type, setType] = useState('person');
   const [statusLabelId, setStatusLabelId] = useState('');
   const [rating, setRating] = useState(0);
+  // Tracked separately from the number: 0 stars and 'never rated' are
+  // different things for a client the shop has not dealt with yet.
+  const [rated, setRated] = useState(false);
   const [isFlagged, setIsFlagged] = useState(false);
   const [flagReason, setFlagReason] = useState('');
   const [notes, setNotes] = useState('');
@@ -57,6 +60,7 @@ export function ClientFormModal({
       setType(client.type);
       setStatusLabelId(client.statusLabelId ?? '');
       setRating(client.rating);
+      setRated(client.rated);
       setIsFlagged(client.isFlagged);
       setFlagReason(client.flagReason ?? '');
       setNotes(client.notes ?? '');
@@ -110,6 +114,7 @@ export function ClientFormModal({
       type: type as Client['type'],
       statusLabelId: statusLabelId || undefined,
       rating,
+      rated,
       isFlagged,
       flagReason: isFlagged ? flagReason.trim() : undefined,
       notes: notes.trim() || undefined,
@@ -189,8 +194,23 @@ export function ClientFormModal({
               options={labels.map((l) => ({ value: l.id, label: lang === 'ar' ? l.name_ar : l.name_en }))}
             />
           </Field>
-          <Field label={t.clients.rating}>
-            <div style={{ paddingTop: 8 }}><Stars value={rating} onChange={setRating} size={22} /></div>
+          <Field label={t.clients.rating} hint={rated ? undefined : t.clients.notRatedHint}>
+            <div style={{ paddingTop: 8 }} className="row gap-10 wrap">
+              <Stars
+                value={rating}
+                rated={rated}
+                onChange={(v) => { setRating(v); setRated(v > 0); }}
+                size={22}
+              />
+              {rated && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => { setRating(0); setRated(false); }}
+                >{t.clients.clearRating}</button>
+              )}
+              {!rated && <span className="tiny faint">{t.clients.notRated}</span>}
+            </div>
           </Field>
         </div>
 

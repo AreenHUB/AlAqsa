@@ -203,7 +203,7 @@ export function ClientsScreen({ navigate }: { navigate: (r: Route) => void }) {
                         </span>
                       )}
                     </td>
-                    <td><Stars value={c.rating} size={13} /></td>
+                    <td><Stars value={c.rating} rated={c.rated} unratedLabel={t.clients.notRated} size={13} /></td>
                     <td className="small">{branchCounts[c.id] ?? 0}</td>
                     <td className="small">{c.dealCount}</td>
                     <td onClick={(e) => e.stopPropagation()}>
@@ -238,7 +238,7 @@ export function ClientsScreen({ navigate }: { navigate: (r: Route) => void }) {
                   </div>
                   <div className="row between">
                     <span className="small muted">{typeLabel(c.type)}</span>
-                    <Stars value={c.rating} size={13} />
+                    <Stars value={c.rating} rated={c.rated} unratedLabel={t.clients.notRated} size={13} />
                   </div>
                   <div className="row gap-12 tiny muted">
                     <span>🏢 {branchCounts[c.id] ?? 0} {t.branches.title}</span>

@@ -10,6 +10,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import { Modal, Field, TextInput, TextArea, Select, Checkbox, useToast, useErrorMessage, Badge } from './ui';
 import { SignaturePad } from './SignaturePad';
+import { BarcodeInput } from './BarcodeInput';
 import { TechnicianPicker } from './TechnicianPicker';
 import { VISIT_TYPES } from '@shared/constants';
 import { todayISO, addDays } from '../utils/validation';
@@ -152,6 +153,41 @@ export function VisitFormModal({
     setCameraChecks((prev) => prev.map((c) => ({
       ...c, lensCleaned: true, imageChecked: true, networkChecked: true,
     })));
+  };
+
+  /**
+   * A serial was scanned onto a replaced part.
+   *
+   * Looking it up does two useful things: the part description fills itself
+   * from the shop record so nothing is retyped on site, and the technician is
+   * warned immediately if the serial is already installed somewhere else.
+   */
+  const onPartSerialScan = async (index: number, field: 'oldSerial' | 'newSerial', raw: string) => {
+    const code = raw.trim();
+    setParts((prev) => prev.map((x, j) => (j === index ? { ...x, [field]: code } : x)));
+    if (!code) return;
+
+    const res = await window.alaqsa.stock.lookupSerial(code);
+    if (!res.ok || !res.data) {
+      toast.warning(t.devices.serialNotFound);
+      return;
+    }
+    const { unit, device, clientName } = res.data;
+    const name = unit?.itemName ?? device?.model ?? '';
+
+    setParts((prev) => prev.map((x, j) => (
+      // Only fill an empty description: a technician who already typed
+      // something meant it.
+      j === index ? { ...x, [field]: code, description: x.description || name } : x
+    )));
+
+    if (field === 'newSerial' && unit && unit.status !== 'in_stock') {
+      toast.warning(t.devices.unitAlreadyInstalled);
+    } else if (field === 'oldSerial' && device && clientName) {
+      toast.success(`${t.stock.installed}: ${clientName}`);
+    } else if (name) {
+      toast.success(t.devices.autofilledFromStock);
+    }
   };
 
   const save = async () => {
@@ -459,13 +495,23 @@ export function VisitFormModal({
                       <TextInput value={p.reason ?? ''}
                         onChange={(v) => setParts((prev) => prev.map((x, j) => (j === i ? { ...x, reason: v } : x)))} />
                     </Field>
-                    <Field label={t.visits.oldSerial}>
-                      <TextInput value={p.oldSerial ?? ''} dir="ltr" className="input mono"
-                        onChange={(v) => setParts((prev) => prev.map((x, j) => (j === i ? { ...x, oldSerial: v } : x)))} />
+                    {/* Both serials are scannable. The OLD one identifies the
+                        unit coming out; the NEW one is looked up in shop stock
+                        so its description fills itself and the unit is
+                        deducted when the visit is saved. */}
+                    <Field label={t.visits.oldSerial} hint={t.stock.scanHint}>
+                      <BarcodeInput
+                        value={p.oldSerial ?? ''}
+                        onChange={(v) => setParts((prev) => prev.map((x, j) => (j === i ? { ...x, oldSerial: v } : x)))}
+                        onScan={(v) => void onPartSerialScan(i, 'oldSerial', v)}
+                      />
                     </Field>
-                    <Field label={t.visits.newSerial}>
-                      <TextInput value={p.newSerial ?? ''} dir="ltr" className="input mono"
-                        onChange={(v) => setParts((prev) => prev.map((x, j) => (j === i ? { ...x, newSerial: v } : x)))} />
+                    <Field label={t.visits.newSerial} hint={t.stock.scanHint}>
+                      <BarcodeInput
+                        value={p.newSerial ?? ''}
+                        onChange={(v) => setParts((prev) => prev.map((x, j) => (j === i ? { ...x, newSerial: v } : x)))}
+                        onScan={(v) => void onPartSerialScan(i, 'newSerial', v)}
+                      />
                     </Field>
                   </div>
                 </div>

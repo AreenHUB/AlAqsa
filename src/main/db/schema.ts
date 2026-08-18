@@ -404,4 +404,156 @@ MIGRATIONS.push({
   `,
 });
 
+// ---------------------------------------------------------------------------
+// v5 — day sheets, requirement checklists, quotations, and an unrated state.
+// ---------------------------------------------------------------------------
+MIGRATIONS.push({
+  version: 5,
+  up: /* sql */ `
+    -- A client whose rating has never been given. 0 used to mean both "no
+    -- stars" and "not rated yet", which made a brand-new client look like the
+    -- worst possible one. NULL now means "not rated"; 1..5 is a real rating.
+    ALTER TABLE clients ADD COLUMN rated INTEGER NOT NULL DEFAULT 0;
+    UPDATE clients SET rated = 1 WHERE rating > 0;
+
+    -- Marks the branch created automatically for a single-site client, so the
+    -- UI can hide the whole notion of branches until a second one is added.
+    ALTER TABLE branches ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0;
+
+    -- ---- Daily work schedule ------------------------------------------
+    -- One row per job assigned to a day. Printed as the sheet the technicians
+    -- take with them: where to go, who to call, and what the work is.
+    CREATE TABLE day_jobs (
+      id TEXT PRIMARY KEY,
+      job_date TEXT NOT NULL,
+      client_id TEXT,
+      branch_id TEXT,
+      -- Free text so a job can be booked before the client exists in the app.
+      place_name TEXT,
+      contact_name TEXT,
+      contact_phone TEXT,
+      location TEXT,
+      map_url TEXT,
+      work_description TEXT,
+      -- planned | in_progress | done | cancelled | postponed
+      status TEXT NOT NULL DEFAULT 'planned',
+      start_time TEXT,
+      priority INTEGER NOT NULL DEFAULT 0,
+      notes TEXT,
+      -- Set once the job has been turned into a recorded visit.
+      visit_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL,
+      FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL
+    );
+    CREATE INDEX idx_day_jobs_date ON day_jobs(job_date);
+    CREATE INDEX idx_day_jobs_client ON day_jobs(client_id);
+
+    -- Who is going. A job can have one technician or several, and the crew
+    -- changes from day to day, so this is a plain join table rather than a
+    -- column on the job.
+    CREATE TABLE day_job_staff (
+      job_id TEXT NOT NULL,
+      staff_id TEXT NOT NULL,
+      PRIMARY KEY (job_id, staff_id),
+      FOREIGN KEY (job_id) REFERENCES day_jobs(id) ON DELETE CASCADE,
+      FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
+    );
+
+    -- ---- Requirement checklists ---------------------------------------
+    -- A reusable template: "renewing a camera certificate needs the old
+    -- licence, screenshots of the recordings, and costs X".
+    CREATE TABLE requirement_templates (
+      id TEXT PRIMARY KEY,
+      name_ar TEXT NOT NULL,
+      name_en TEXT,
+      description TEXT,
+      estimated_cost REAL,
+      currency TEXT NOT NULL DEFAULT 'AED',
+      active INTEGER NOT NULL DEFAULT 1,
+      sort INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE requirement_items (
+      id TEXT PRIMARY KEY,
+      template_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      hint TEXT,
+      required INTEGER NOT NULL DEFAULT 1,
+      cost REAL,
+      sort INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (template_id) REFERENCES requirement_templates(id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_req_items_template ON requirement_items(template_id);
+
+    -- A template applied to a client, and which items have been collected.
+    CREATE TABLE requirement_cases (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      template_id TEXT,
+      title TEXT NOT NULL,
+      -- open | done | cancelled
+      status TEXT NOT NULL DEFAULT 'open',
+      due_date TEXT,
+      total_cost REAL,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+      FOREIGN KEY (template_id) REFERENCES requirement_templates(id) ON DELETE SET NULL
+    );
+    CREATE INDEX idx_req_cases_client ON requirement_cases(client_id);
+
+    CREATE TABLE requirement_case_items (
+      id TEXT PRIMARY KEY,
+      case_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      hint TEXT,
+      required INTEGER NOT NULL DEFAULT 1,
+      cost REAL,
+      collected INTEGER NOT NULL DEFAULT 0,
+      -- An uploaded copy of the document, when there is one.
+      document_id TEXT,
+      sort INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (case_id) REFERENCES requirement_cases(id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_req_case_items_case ON requirement_case_items(case_id);
+
+    -- ---- Quotations ----------------------------------------------------
+    -- The step before an invoice: what was offered, and whether it was won.
+    CREATE TABLE quotations (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      branch_id TEXT,
+      number TEXT NOT NULL,
+      date TEXT NOT NULL,
+      valid_until TEXT,
+      -- draft | sent | accepted | rejected | expired
+      status TEXT NOT NULL DEFAULT 'draft',
+      items TEXT NOT NULL DEFAULT '[]',
+      subtotal REAL NOT NULL DEFAULT 0,
+      tax_rate REAL NOT NULL DEFAULT 0,
+      tax_amount REAL NOT NULL DEFAULT 0,
+      discount REAL NOT NULL DEFAULT 0,
+      total REAL NOT NULL DEFAULT 0,
+      trn TEXT,
+      terms TEXT,
+      notes TEXT,
+      -- Set when the quotation has been turned into an invoice.
+      invoice_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_quotations_client ON quotations(client_id);
+    CREATE INDEX idx_quotations_status ON quotations(status);
+
+    -- Which quotation an invoice came from, closing the loop.
+    ALTER TABLE invoices ADD COLUMN quotation_id TEXT;
+  `,
+});
+
 export const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

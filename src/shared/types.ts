@@ -46,7 +46,15 @@ export interface Client {
   nameAr: string;
   nameEn?: string;
   statusLabelId?: UUID;
-  rating: number; // 0..5
+  rating: number; // 1..5, meaningless unless `rated` is true
+  /**
+   * Whether anyone has actually rated this client yet.
+   *
+   * A brand-new client has not been dealt with, so rating them zero stars
+   * would show them as the worst on the list. Until this is true the UI shows
+   * "not rated yet" instead of an empty row of stars.
+   */
+  rated: boolean;
   isFlagged: boolean; // red warning flag (bad payer, etc.)
   flagReason?: string;
   notes?: string;
@@ -72,6 +80,12 @@ export interface Branch {
   nameAr: string;
   nameEn?: string;
   location: GeoLocation;
+  /**
+   * Created automatically for a single-site client so devices and visits have
+   * somewhere to live. The UI hides branches entirely until a real second
+   * branch is added.
+   */
+  isDefault?: boolean;
   statusLabelId?: UUID;
   managerContact?: string;
   notes?: string;
@@ -252,8 +266,131 @@ export interface Visit {
 // Inventory (shop stock — feeds autocomplete)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Daily work schedule — the sheet the technicians take out each morning.
+// ---------------------------------------------------------------------------
+export type DayJobStatus = 'planned' | 'in_progress' | 'done' | 'cancelled' | 'postponed';
+
+export interface DayJob {
+  id: UUID;
+  jobDate: ISODate;
+  clientId?: UUID;
+  branchId?: UUID;
+  /** Free text, so a job can be booked before the client exists in the app. */
+  placeName?: string;
+  contactName?: string;
+  contactPhone?: string;
+  location?: string;
+  mapUrl?: string;
+  workDescription?: string;
+  status: DayJobStatus;
+  startTime?: string;
+  priority: number;
+  notes?: string;
+  visitId?: UUID;
+  /** Technicians assigned — one or several, different every day. */
+  staffIds: UUID[];
+  /** Filled on read for display. */
+  staffNames?: string[];
+  clientName?: string;
+  branchName?: string;
+  createdAt: ISODate;
+  updatedAt: ISODate;
+}
+
+// ---------------------------------------------------------------------------
+// Requirement checklists — "what do we need for a licence renewal?"
+// ---------------------------------------------------------------------------
+export interface RequirementItem {
+  id: UUID;
+  templateId?: UUID;
+  label: string;
+  hint?: string;
+  required: boolean;
+  cost?: number;
+  sort: number;
+}
+
+export interface RequirementTemplate {
+  id: UUID;
+  nameAr: string;
+  nameEn?: string;
+  description?: string;
+  estimatedCost?: number;
+  currency: string;
+  active: boolean;
+  sort: number;
+  items: RequirementItem[];
+  createdAt: ISODate;
+  updatedAt: ISODate;
+}
+
+export type RequirementCaseStatus = 'open' | 'done' | 'cancelled';
+
+export interface RequirementCaseItem {
+  id: UUID;
+  caseId: UUID;
+  label: string;
+  hint?: string;
+  required: boolean;
+  cost?: number;
+  collected: boolean;
+  documentId?: UUID;
+  sort: number;
+}
+
+/** A template applied to one client, tracking what has been collected. */
+export interface RequirementCase {
+  id: UUID;
+  clientId: UUID;
+  templateId?: UUID;
+  title: string;
+  status: RequirementCaseStatus;
+  dueDate?: ISODate;
+  totalCost?: number;
+  notes?: string;
+  items: RequirementCaseItem[];
+  createdAt: ISODate;
+  updatedAt: ISODate;
+}
+
+// ---------------------------------------------------------------------------
+// Quotations — the offer that comes before an invoice.
+// ---------------------------------------------------------------------------
+export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
+
+export interface QuotationItem {
+  id: UUID;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface Quotation {
+  id: UUID;
+  clientId: UUID;
+  branchId?: UUID;
+  number: string;
+  date: ISODate;
+  validUntil?: ISODate;
+  status: QuotationStatus;
+  items: QuotationItem[];
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  discount: number;
+  total: number;
+  trn?: string;
+  terms?: string;
+  notes?: string;
+  invoiceId?: UUID;
+  createdAt: ISODate;
+  updatedAt: ISODate;
+}
+
 export type ExportKind =
-  | 'visit_pdf' | 'agreement_pdf' | 'invoice_pdf' | 'client_excel' | 'full_excel';
+  | 'visit_pdf' | 'agreement_pdf' | 'invoice_pdf' | 'client_excel' | 'full_excel'
+  | 'quotation_pdf' | 'day_sheet_pdf';
 
 /** A file the app produced, kept so the owner can find it again. */
 export interface ExportRecord {

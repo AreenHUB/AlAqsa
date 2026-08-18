@@ -347,18 +347,29 @@ export function StringList({
 // Display helpers
 // ---------------------------------------------------------------------------
 export function Stars({
-  value, onChange, size = 15,
+  value, onChange, size = 15, rated = true, unratedLabel,
 }: {
   value: number;
   onChange?: (v: number) => void;
   size?: number;
+  /**
+   * False for a client nobody has rated yet. A brand-new client has not been
+   * dealt with, so five empty stars would wrongly show them as the worst on
+   * the list; read-only views show a neutral label instead.
+   */
+  rated?: boolean;
+  unratedLabel?: string;
 }) {
+  // Read-only and never rated: say so rather than implying a zero score.
+  if (!rated && !onChange) {
+    return <span className="tiny faint">{unratedLabel ?? '—'}</span>;
+  }
   return (
     <span className="stars">
       {[1, 2, 3, 4, 5].map((n) => (
         <span
           key={n}
-          className={`star ${n <= value ? 'filled' : ''} ${onChange ? 'interactive' : ''}`}
+          className={`star ${rated && n <= value ? 'filled' : ''} ${onChange ? 'interactive' : ''}`}
           style={{ fontSize: size }}
           onClick={onChange ? () => onChange(n === value ? 0 : n) : undefined}
           role={onChange ? 'button' : undefined}

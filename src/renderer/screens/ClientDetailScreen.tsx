@@ -17,6 +17,8 @@ import { LicensesPanel } from '../components/LicensesPanel';
 import { FinancePanel } from '../components/FinancePanel';
 import { NotesPanel } from '../components/NotesPanel';
 import { ExportsPanel } from '../components/ExportsPanel';
+import { QuotationsPanel } from '../components/QuotationsPanel';
+import { RequirementsPanel } from '../components/RequirementsPanel';
 import { DeviceQrModal } from '../components/DeviceQrModal';
 import { ShareReportModal } from '../components/ShareReportModal';
 import type { Route } from '../Shell';
@@ -36,6 +38,9 @@ export function ClientDetailScreen({
 
   const [client, setClient] = useState<Client | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  // Whether this client has branches worth showing, or just the hidden
+  // auto-created site every client gets.
+  const [hasRealBranches, setHasRealBranches] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -68,7 +73,12 @@ export function ClientDetailScreen({
     ]);
     if (c.ok) setClient(c.data);
     if (ct.ok) setContacts(ct.data);
-    if (b.ok) setBranches(b.data);
+    if (b.ok) {
+      setBranches(b.data);
+      // One auto-created default branch is an implementation detail, not a
+      // branch the owner made, so it must not switch the branches UI on.
+      setHasRealBranches(b.data.length > 1 || b.data.some((x) => !x.isDefault));
+    }
     if (d.ok) setDevices(d.data);
     if (v.ok) setVisits(v.data);
     if (l.ok) setLabels(l.data);
@@ -120,12 +130,18 @@ export function ClientDetailScreen({
 
   const tabs = [
     { id: 'overview', label: t.clients.tabs.overview },
-    { id: 'branches', label: t.clients.tabs.branches, badge: branches.length },
+    // A single-site client has one hidden auto-created branch; showing a
+    // "Branches (1)" tab for it only invites confusion.
+    ...(hasRealBranches
+      ? [{ id: 'branches', label: t.clients.tabs.branches, badge: branches.length }]
+      : []),
     { id: 'devices', label: t.clients.tabs.devices, badge: devices.length },
     { id: 'visits', label: t.clients.tabs.visits, badge: visits.length },
     { id: 'documents', label: t.clients.tabs.documents },
     { id: 'licenses', label: t.clients.tabs.licenses },
     { id: 'finance', label: t.clients.tabs.finance },
+    { id: 'quotations', label: t.quotations.title },
+    { id: 'requirements', label: t.requirements.title },
     { id: 'notes', label: t.notesLog.title },
     { id: 'exports', label: t.exports.title },
   ];
@@ -181,9 +197,9 @@ export function ClientDetailScreen({
               </div>
               <h1 style={{ fontSize: 21 }}>{lang === 'ar' ? client.nameAr : (client.nameEn || client.nameAr)}</h1>
               <div className="row gap-12 wrap small muted">
-                <Stars value={client.rating} size={14} />
+                <Stars value={client.rating} rated={client.rated} unratedLabel={t.clients.notRated} size={14} />
                 <span>🔄 {t.clients.dealCount}: {client.dealCount}</span>
-                <span>🏢 {branches.length}</span>
+                {hasRealBranches && <span>🏢 {branches.length}</span>}
                 <span>📷 {cameras.length}</span>
               </div>
             </div>
@@ -240,7 +256,11 @@ export function ClientDetailScreen({
           <div className="card">
             <div className="card-head"><span className="card-title">📊 {t.common.details}</span></div>
             <div className="card-body col gap-8 small">
-              <div className="row between"><span className="muted">{t.branches.title}</span><span className="bold">{branches.length}</span></div>
+              {/* A single-site client has one hidden auto-created branch;
+                  reporting "Branches: 1" for it is noise. */}
+              {hasRealBranches && (
+                <div className="row between"><span className="muted">{t.branches.title}</span><span className="bold">{branches.length}</span></div>
+              )}
               <div className="row between"><span className="muted">{t.dashboard.cameras}</span><span className="bold">{cameras.length}</span></div>
               <div className="row between"><span className="muted">{t.devices.title}</span><span className="bold">{devices.length}</span></div>
               <div className="row between"><span className="muted">{t.visits.title}</span><span className="bold">{visits.length}</span></div>
@@ -521,6 +541,12 @@ export function ClientDetailScreen({
       {tab === 'documents' && <DocumentsPanel clientId={clientId} branches={branches} onChanged={load} />}
       {tab === 'licenses' && <LicensesPanel clientId={clientId} branches={branches} onChanged={load} />}
       {tab === 'finance' && <FinancePanel clientId={clientId} />}
+      {tab === 'quotations' && (
+        <QuotationsPanel clientId={clientId} clientName={client.nameAr} contacts={contacts} />
+      )}
+
+      {tab === 'requirements' && <RequirementsPanel clientId={clientId} />}
+
       {tab === 'exports' && (
         <ExportsPanel clientId={clientId} clientName={client.nameAr} contacts={contacts} />
       )}

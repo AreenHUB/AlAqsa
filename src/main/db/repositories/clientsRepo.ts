@@ -18,7 +18,8 @@ function mapClient(r: ClientRow): Client {
   return {
     id: r.id, code: r.code, type: r.type as Client['type'], nameAr: r.name_ar,
     nameEn: r.name_en ?? undefined, statusLabelId: r.status_label_id ?? undefined,
-    rating: r.rating, isFlagged: toBool(r.is_flagged), flagReason: r.flag_reason ?? undefined,
+    rating: r.rating, rated: toBool((r as any).rated), isFlagged: toBool(r.is_flagged),
+    flagReason: r.flag_reason ?? undefined,
     notes: r.notes ?? undefined, dealCount: r.deal_count,
     createdAt: r.created_at, updatedAt: r.updated_at,
   };
@@ -65,12 +66,15 @@ export const clientsRepo = {
     const maxRow = db.prepare(`SELECT MAX(CAST(substr(code, 5) AS INTEGER)) AS m FROM clients WHERE code LIKE 'ALQ-%'`).get() as { m: number | null };
     const code = input.code ?? nextClientCode(maxRow.m ?? 0);
     db.prepare(`INSERT INTO clients
-      (id, code, type, name_ar, name_en, status_label_id, rating, is_flagged, flag_reason, notes, deal_count, created_at, updated_at)
-      VALUES (@id,@code,@type,@name_ar,@name_en,@status_label_id,@rating,@is_flagged,@flag_reason,@notes,@deal_count,@created_at,@updated_at)`)
+      (id, code, type, name_ar, name_en, status_label_id, rating, rated, is_flagged, flag_reason, notes, deal_count, created_at, updated_at)
+      VALUES (@id,@code,@type,@name_ar,@name_en,@status_label_id,@rating,@rated,@is_flagged,@flag_reason,@notes,@deal_count,@created_at,@updated_at)`)
       .run({
         id, code, type: input.type ?? 'person', name_ar: input.nameAr ?? '',
         name_en: input.nameEn ?? null, status_label_id: input.statusLabelId ?? null,
-        rating: input.rating ?? 0, is_flagged: fromBool(input.isFlagged),
+        rating: input.rating ?? 0,
+        // A rating only counts once someone actually gives one.
+        rated: fromBool(input.rated ?? ((input.rating ?? 0) > 0)),
+        is_flagged: fromBool(input.isFlagged),
         flag_reason: input.flagReason ?? null, notes: input.notes ?? null,
         deal_count: input.dealCount ?? 0, created_at: ts, updated_at: ts,
       });
@@ -84,11 +88,12 @@ export const clientsRepo = {
     const merged = { ...existing, ...patch, updatedAt: now() };
     db.prepare(`UPDATE clients SET
       type=@type, name_ar=@name_ar, name_en=@name_en, status_label_id=@status_label_id,
-      rating=@rating, is_flagged=@is_flagged, flag_reason=@flag_reason, notes=@notes,
+      rating=@rating, rated=@rated, is_flagged=@is_flagged, flag_reason=@flag_reason, notes=@notes,
       deal_count=@deal_count, updated_at=@updated_at WHERE id=@id`)
       .run({
         id, type: merged.type, name_ar: merged.nameAr, name_en: merged.nameEn ?? null,
         status_label_id: merged.statusLabelId ?? null, rating: merged.rating,
+        rated: fromBool(merged.rated ?? (merged.rating > 0)),
         is_flagged: fromBool(merged.isFlagged), flag_reason: merged.flagReason ?? null,
         notes: merged.notes ?? null, deal_count: merged.dealCount, updated_at: merged.updatedAt,
       });

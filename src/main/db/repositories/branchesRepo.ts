@@ -20,6 +20,7 @@ function mapBranch(r: BranchRow): Branch {
       address: r.address ?? undefined, lat: r.lat ?? undefined,
       lng: r.lng ?? undefined, mapUrl: r.map_url ?? undefined,
     },
+    isDefault: toBool((r as any).is_default),
     statusLabelId: r.status_label_id ?? undefined,
     managerContact: r.manager_contact ?? undefined, notes: r.notes ?? undefined,
     createdAt: r.created_at, updatedAt: r.updated_at,
@@ -43,11 +44,12 @@ export const branchesRepo = {
     const ts = now();
     const loc = input.location ?? {};
     db.prepare(`INSERT INTO branches
-      (id, client_id, name_ar, name_en, address, lat, lng, map_url, status_label_id, manager_contact, notes, created_at, updated_at)
-      VALUES (@id,@client_id,@name_ar,@name_en,@address,@lat,@lng,@map_url,@status_label_id,@manager_contact,@notes,@created_at,@updated_at)`)
+      (id, client_id, name_ar, name_en, address, lat, lng, map_url, is_default, status_label_id, manager_contact, notes, created_at, updated_at)
+      VALUES (@id,@client_id,@name_ar,@name_en,@address,@lat,@lng,@map_url,@is_default,@status_label_id,@manager_contact,@notes,@created_at,@updated_at)`)
       .run({
         id, client_id: input.clientId, name_ar: input.nameAr ?? '', name_en: input.nameEn ?? null,
         address: loc.address ?? null, lat: loc.lat ?? null, lng: loc.lng ?? null, map_url: loc.mapUrl ?? null,
+        is_default: input.isDefault ? 1 : 0,
         status_label_id: input.statusLabelId ?? null, manager_contact: input.managerContact ?? null,
         notes: input.notes ?? null, created_at: ts, updated_at: ts,
       });
@@ -77,5 +79,35 @@ export const branchesRepo = {
 
   countByClient(clientId: string): number {
     return (getDb().prepare('SELECT count(*) AS c FROM branches WHERE client_id = ?').get(clientId) as { c: number }).c;
+  },
+
+  /**
+   * The branch a device or visit should attach to when the client has not been
+   * given any branches of their own.
+   *
+   * `devices.branch_id` and `visits.branch_id` are NOT NULL, so every record
+   * needs somewhere to live. Rather than making the column nullable — which
+   * would complicate every join in the app — a single-site client gets one
+   * hidden "main site" branch created on demand. The moment the owner adds a
+   * real second branch, branches simply become visible; nothing migrates.
+   */
+  ensureDefault(clientId: string): Branch {
+    const existing = this.listByClient(clientId);
+    if (existing.length) return existing.find((b) => b.isDefault) ?? existing[0];
+    return this.create({
+      clientId,
+      nameAr: 'الموقع الرئيسي',
+      nameEn: 'Main site',
+      isDefault: true,
+    });
+  },
+
+  /**
+   * True when the client has real branches worth showing. One auto-created
+   * default branch is an implementation detail, not a branch the owner made.
+   */
+  hasRealBranches(clientId: string): boolean {
+    const rows = this.listByClient(clientId);
+    return rows.length > 1 || rows.some((b) => !b.isDefault);
   },
 };

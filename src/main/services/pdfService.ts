@@ -93,8 +93,14 @@ const NEWLINE = '\n';
  * still wraps where it legitimately should.
  */
 
-/** Latin letters, digits and the punctuation that binds them (dates, codes). */
-const LATIN_ISLAND = /[A-Za-z0-9][A-Za-z0-9\-_/.:+&'()]*(?: [A-Za-z0-9][A-Za-z0-9\-_/.:+&'()]*)*/g;
+/**
+ * Latin letters, digits and the punctuation that binds them (dates, codes).
+ *
+ * A leading '+' is part of the island so an international phone number keeps
+ * its plus at the front; without it the RTL flip pushed the sign to the end
+ * and printed "971501234567+".
+ */
+const LATIN_ISLAND = /\+?[A-Za-z0-9][A-Za-z0-9\-_/.:+&'()]*(?: \+?[A-Za-z0-9][A-Za-z0-9\-_/.:+&'()]*)*/g;
 
 /**
  * Brackets are mirrored by the RTL flip: an opening one arrives as a closing
@@ -301,14 +307,16 @@ function buildVisitDoc(visit: Visit, devices: Device[]) {
     content.push({
       table: {
         headerRows: 1,
-        widths: ['*', '*', '*', 70, 28],
+        // Serials and model codes are long unbroken Latin strings; give them
+        // fixed width so they cannot squeeze the other columns off the page.
+        widths: [110, 105, 80, 62, 22],
         body: [
           ['الرقم التسلسلي', 'الموديل', 'الشركة', 'النوع', 'م']
             .map((h) => ({ text: ar(h), style: 'th', alignment: 'right' })),
           ...others.map((d, i) => [
-            { text: d.serialNumber ?? '—', alignment: 'right', fontSize: 8 },
-            { text: d.model ?? '—', alignment: 'right', fontSize: 8 },
-            { text: d.manufacturer ?? '—', alignment: 'right', fontSize: 8 },
+            { text: d.serialNumber ?? '—', alignment: 'left', fontSize: 7.5 },
+            { text: d.model ?? '—', alignment: 'left', fontSize: 7.5 },
+            { text: ar(d.manufacturer ?? '—'), alignment: 'right', fontSize: 8 },
             { text: ar(DEVICE_TYPE_AR[d.type] ?? d.type), alignment: 'right', fontSize: 8 },
             { text: String(i + 1), alignment: 'center', fontSize: 8 },
           ]),
@@ -659,14 +667,14 @@ export async function generateAgreementPdf(clientId: string): Promise<string> {
     content.push({
       table: {
         headerRows: 1,
-        widths: ['*', '*', '*'],
+        widths: [110, 110, '*'],
         body: [
           ['تاريخ الانتهاء', 'تاريخ التجديد', 'رقم الرخصة']
             .map((h) => ({ text: ar(h), style: 'th', alignment: 'right' })),
           ...licenses.map((l) => [
-            { text: l.expiryDate ?? '—', alignment: 'right', fontSize: 8 },
-            { text: l.renewalDate ?? '—', alignment: 'right', fontSize: 8 },
-            { text: l.licenseNumber ?? '—', alignment: 'right', fontSize: 8 },
+            { text: l.expiryDate ?? '—', alignment: 'left', fontSize: 8 },
+            { text: l.renewalDate ?? '—', alignment: 'left', fontSize: 8 },
+            { text: l.licenseNumber ?? '—', alignment: 'left', fontSize: 8 },
           ]),
         ],
       },
@@ -676,16 +684,21 @@ export async function generateAgreementPdf(clientId: string): Promise<string> {
   }
 
   content.push({ text: ar('الشروط'), style: 'section', alignment: 'right' });
-  content.push({
-    ul: [
-      ar('تشمل الاتفاقية الصيانة الدورية وفحص الأجهزة المذكورة أعلاه.'),
-      ar('لا تشمل الاتفاقية الأضرار الناتجة عن سوء الاستخدام أو الكوارث الطبيعية.'),
-      ar('يلتزم العميل بتوفير الوصول للموقع في مواعيد الصيانة المتفق عليها.'),
-      ar('قطع الغيار تُحتسب بشكل منفصل ما لم يُذكر خلاف ذلك.'),
-    ],
-    alignment: 'right',
-    margin: [0, 4, 0, 12],
+  // pdfmake's `ul` anchors its bullet on the LEFT and does not mirror for RTL,
+  // so the marker drifted away from its line and the text wrapped under it.
+  // The bullet is part of the string instead, which lays out correctly.
+  [
+    'تشمل الاتفاقية الصيانة الدورية وفحص الأجهزة المذكورة أعلاه.',
+    'لا تشمل الاتفاقية الأضرار الناتجة عن سوء الاستخدام أو الكوارث الطبيعية.',
+    'يلتزم العميل بتوفير الوصول للموقع في مواعيد الصيانة المتفق عليها.',
+    'قطع الغيار تُحتسب بشكل منفصل ما لم يُذكر خلاف ذلك.',
+  ].forEach((line) => {
+    content.push({
+      text: ar(`• ${line}`), alignment: 'right', fontSize: 9.5,
+      margin: [0, 0, 0, 5], lineHeight: 1.25,
+    });
   });
+  content.push({ text: '', margin: [0, 0, 0, 8] });
 
   content.push({
     columns: [
@@ -711,5 +724,242 @@ export async function generateAgreementPdf(clientId: string): Promise<string> {
       section: { fontSize: 12, bold: true, color: '#0B4F8A', margin: [0, 10, 0, 4] },
       th: { bold: true, fontSize: 9, fillColor: '#E3F2FD', color: '#0B4F8A' },
     },
+  }, out);
+}
+
+
+/**
+ * The document styles every report shares. They were duplicated inline in each
+ * generator; a single object keeps a new report looking like the others.
+ */
+const REPORT_STYLES = {
+  brand: { fontSize: 18, bold: true, color: '#0B4F8A' },
+  brandEn: { fontSize: 12, bold: true, color: '#1E88E5' },
+  title: { fontSize: 15, bold: true, color: '#0B4F8A' },
+  subtitle: { fontSize: 11, color: '#374151' },
+  section: { fontSize: 12, bold: true, color: '#0B4F8A', margin: [0, 10, 0, 4] },
+  th: { bold: true, fontSize: 9, fillColor: '#E3F2FD', color: '#0B4F8A' },
+};
+
+const QUOTE_STATUS_AR: Record<string, string> = {
+  draft: 'مسودة', sent: 'مرسل', accepted: 'مقبول',
+  rejected: 'مرفوض', expired: 'منتهي',
+};
+
+/** Price quotation sent to a client before any work is agreed. */
+export async function generateQuotationPdf(quotationId: string): Promise<string> {
+  const { quotationsRepo } = require('../db/repositories/workRepo') as typeof import('../db/repositories/workRepo');
+  const { settingsRepo } = require('../db/repositories/miscRepo') as typeof import('../db/repositories/miscRepo');
+
+  const q = quotationsRepo.get(quotationId);
+  if (!q) throw new Error('NOT_FOUND');
+  const client = clientsRepo.get(q.clientId);
+  const contacts = clientsRepo.contacts(q.clientId);
+  const primary = contacts.find((c) => c.isPrimary) ?? contacts[0];
+
+  const shopTrn = settingsRepo.get('shop.trn') ?? '';
+  const shopPhone = settingsRepo.get('shop.phone') ?? AUTHOR.phone;
+  const money = (n: number) => n.toFixed(2);
+
+  const content: any[] = [
+    ...header('عرض سعر', `${q.number} — ${q.date}`),
+    {
+      columns: [
+        {
+          width: '*',
+          stack: [
+            { text: ar('إلى (العميل)'), bold: true, alignment: 'right', color: '#0B4F8A' },
+            { text: ar(client?.nameAr ?? ''), alignment: 'right' },
+            { text: ar(primary?.name ?? ''), alignment: 'right', fontSize: 9 },
+            { text: primary?.phones?.[0] ?? '', alignment: 'right', fontSize: 9 },
+          ],
+        },
+        {
+          width: '*',
+          stack: [
+            { text: ar('من (المورد)'), bold: true, alignment: 'right', color: '#0B4F8A' },
+            { text: ar(APP_NAME_AR), alignment: 'right' },
+            { text: shopPhone, alignment: 'right', fontSize: 9 },
+            shopTrn ? { text: ar(`الرقم الضريبي: ${shopTrn}`), alignment: 'right', fontSize: 9 } : {},
+          ],
+        },
+      ],
+      columnGap: 16,
+      margin: [0, 6, 0, 10],
+    },
+    labelValueTable([
+      ['رقم العرض', q.number],
+      ['التاريخ', q.date],
+      ['صالح حتى', q.validUntil ?? '—'],
+      ['الحالة', QUOTE_STATUS_AR[q.status] ?? q.status],
+      ...(q.trn ? [['الرقم الضريبي للعميل', q.trn] as [string, string]] : []),
+    ]),
+  ];
+
+  content.push({ text: ar('تفاصيل العرض'), style: 'section', alignment: 'right' });
+  content.push({
+    table: {
+      headerRows: 1,
+      widths: [70, 70, 45, '*', 22],
+      body: [
+        ['الإجمالي', 'سعر الوحدة', 'الكمية', 'البيان', 'م']
+          .map((h) => ({ text: ar(h), style: 'th', alignment: 'right' })),
+        ...(q.items.length ? q.items : [{ id: '', description: '—', quantity: 0, unitPrice: 0 }])
+          .map((it, i) => [
+            { text: money((it.quantity ?? 0) * (it.unitPrice ?? 0)), alignment: 'left', fontSize: 9 },
+            { text: money(it.unitPrice ?? 0), alignment: 'left', fontSize: 9 },
+            { text: String(it.quantity ?? 0), alignment: 'center', fontSize: 9 },
+            { text: ar(it.description), alignment: 'right', fontSize: 9 },
+            { text: String(i + 1), alignment: 'center', fontSize: 9 },
+          ]),
+      ],
+    },
+    layout: 'lightHorizontalLines',
+    margin: [0, 4, 0, 10],
+  });
+
+  const totalsBody: any[] = [
+    [{ text: money(q.subtotal), alignment: 'left' }, { text: ar('المجموع'), alignment: 'right' }],
+  ];
+  if (q.discount > 0) {
+    totalsBody.push([
+      { text: `- ${money(q.discount)}`, alignment: 'left', color: '#b91c1c' },
+      { text: ar('الخصم'), alignment: 'right' },
+    ]);
+  }
+  if (q.taxRate > 0) {
+    totalsBody.push([
+      { text: money(q.taxAmount), alignment: 'left' },
+      { text: ar(`ضريبة القيمة المضافة (${q.taxRate}%)`), alignment: 'right' },
+    ]);
+  }
+  totalsBody.push([
+    { text: money(q.total), alignment: 'left', bold: true, fillColor: '#E3F2FD' },
+    { text: ar('الإجمالي'), alignment: 'right', bold: true, fillColor: '#E3F2FD' },
+  ]);
+
+  content.push({
+    columns: [
+      { width: '*', text: '' },
+      { width: 260, table: { widths: [90, '*'], body: totalsBody }, layout: 'lightHorizontalLines' },
+    ],
+    margin: [0, 0, 0, 12],
+  });
+
+  if (q.terms) {
+    content.push({ text: ar('الشروط'), style: 'section', alignment: 'right' });
+    content.push({ text: ar(q.terms), alignment: 'right', fontSize: 9, margin: [0, 0, 0, 8] });
+  }
+  if (q.notes) {
+    content.push({ text: ar(`ملاحظات: ${q.notes}`), alignment: 'right', fontSize: 9, margin: [0, 0, 0, 8] });
+  }
+  content.push({
+    text: ar('هذا العرض غير ملزم ما لم يوقع عليه الطرفان.'),
+    alignment: 'right', fontSize: 8.5, color: '#6b7280', margin: [0, 4, 0, 10],
+  });
+  content.push({
+    columns: [
+      { width: '*', stack: [{ text: ar('توقيع العميل'), alignment: 'center', bold: true, fontSize: 9 }, { text: '________________________', alignment: 'center', margin: [0, 18, 0, 0] }] },
+      { width: '*', stack: [{ text: ar('عن المورد'), alignment: 'center', bold: true, fontSize: 9 }, { text: '________________________', alignment: 'center', margin: [0, 18, 0, 0] }] },
+    ],
+    margin: [0, 12, 0, 0],
+  });
+
+  const safe = (client?.nameAr ?? 'client').replace(/[\\/:*?"<>|]/g, '_');
+  const out = path.join(reportsDir(), `عرض-سعر-${q.number}-${safe}.pdf`);
+  return writePdf({
+    pageSize: 'A4',
+    pageMargins: [40, 40, 40, 50],
+    defaultStyle: { font: 'Arabic', fontSize: 10 },
+    content,
+    footer,
+    styles: REPORT_STYLES,
+  }, out);
+}
+
+const JOB_STATUS_AR: Record<string, string> = {
+  planned: 'مخطط', in_progress: 'جار', done: 'منجز',
+  cancelled: 'ملغى', postponed: 'مؤجل',
+};
+
+/**
+ * The day sheet the technicians take out with them: where to go, who to call,
+ * the work, and who is going. One card per job so it can be read at a glance
+ * on site rather than as a dense table.
+ */
+export async function generateDaySheetPdf(date: string): Promise<string> {
+  const { dayJobsRepo } = require('../db/repositories/workRepo') as typeof import('../db/repositories/workRepo');
+  const jobs = dayJobsRepo.listByDate(date);
+
+  const content: any[] = [...header('برنامج العمل اليومي', date)];
+
+  if (!jobs.length) {
+    content.push({
+      text: ar('لا توجد زيارات مجدولة في هذا اليوم.'),
+      alignment: 'right', margin: [0, 20, 0, 0], color: '#6b7280',
+    });
+  }
+
+  jobs.forEach((j, i) => {
+    const place = j.placeName || j.clientName || '—';
+    const where = [j.branchName, j.location].filter(Boolean).join(' — ') || '—';
+    const crew = (j.staffNames ?? []).join('، ') || '—';
+
+    content.push({
+      table: {
+        widths: ['*'],
+        body: [
+          [{
+            // One card per job, kept on a single page so a folded sheet never
+            // splits a job across the fold.
+            stack: [
+              {
+                columns: [
+                  { width: 'auto', text: ar(JOB_STATUS_AR[j.status] ?? j.status), fontSize: 8.5, color: '#6b7280' },
+                  {
+                    width: '*',
+                    text: ar(`${i + 1}. ${place}${j.startTime ? ` — ${j.startTime}` : ''}`),
+                    bold: true, fontSize: 12, color: '#0B4F8A', alignment: 'right',
+                  },
+                ],
+                margin: [0, 0, 0, 6],
+              },
+              labelValueTable([
+                ['الموقع', where],
+                ['رقم التواصل', [j.contactName, j.contactPhone].filter(Boolean).join(' — ') || '—'],
+                ['العمل المطلوب', j.workDescription ?? '—'],
+                ['الفنيون', crew],
+                ...(j.notes ? [['ملاحظات', j.notes] as [string, string]] : []),
+              ]),
+              {
+                columns: [
+                  { width: '*', text: ar('التوقيع: ________________'), alignment: 'right', fontSize: 8.5, color: '#6b7280' },
+                  { width: '*', text: ar('وقت الانتهاء: __________'), alignment: 'right', fontSize: 8.5, color: '#6b7280' },
+                  { width: '*', text: ar('وقت الوصول: __________'), alignment: 'right', fontSize: 8.5, color: '#6b7280' },
+                ],
+                margin: [0, 2, 0, 0],
+              },
+            ],
+            margin: [8, 8, 8, 8],
+          }],
+        ],
+      },
+      layout: {
+        hLineColor: () => '#cbd5e1',
+        vLineColor: () => '#cbd5e1',
+      },
+      margin: [0, 0, 0, 10],
+      unbreakable: true,
+    });
+  });
+
+  const out = path.join(reportsDir(), `برنامج-العمل-${date}.pdf`);
+  return writePdf({
+    pageSize: 'A4',
+    pageMargins: [40, 40, 40, 50],
+    defaultStyle: { font: 'Arabic', fontSize: 10 },
+    content,
+    footer,
+    styles: REPORT_STYLES,
   }, out);
 }
