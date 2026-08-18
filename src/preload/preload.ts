@@ -34,7 +34,7 @@ const API_MAP: Record<string, string[]> = {
   users: ['list', 'save', 'remove'],
   audit: ['recent'],
   backup: ['now', 'exportEncrypted', 'restore', 'factoryReset'],
-  files: ['pickOpen', 'pickSave', 'saveDataUrl', 'importDocument'],
+  files: ['pickOpen', 'pickBackup', 'pickSave', 'saveDataUrl', 'importDocument'],
   settings: ['get', 'set', 'setLanguage', 'setTheme'],
   network: ['getMode', 'setHost', 'discover', 'connect', 'disconnect'],
   app: ['about', 'seedDemoData', 'state', 'zoom'],

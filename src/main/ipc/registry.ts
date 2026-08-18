@@ -69,6 +69,7 @@ function classifyError(e: unknown): { code: string; error: string } {
     'CANNOT_REMOVE_LAST_ADMIN',
     'OWNER_PASSWORD_REQUIRED', 'DAILY_MUST_DIFFER', 'FEATURE_DISABLED',
     'ALREADY_INVOICED', 'NO_PDF_VIEWER',
+    'FILE_ACCESS_FAILED', 'CHANNEL_NOT_ALLOWED',
   ];
   if (known.includes(raw)) return { code: raw, error: raw };
 
@@ -190,6 +191,48 @@ function consumeReplacedParts(ctx: AppContext, visit: { id: string; branchId?: s
   } catch (e) {
     console.error('[AlAqsa] could not consume replaced parts:', e);
   }
+}
+
+/**
+ * Copy a directory tree. Used to carry the encrypted file store in and out of
+ * backups; `fs.cpSync` handles nesting and is available on the Node version
+ * Electron ships.
+ */
+function copyTree(from: string, to: string): void {
+  if (!fs.existsSync(from)) return;
+  fs.mkdirSync(to, { recursive: true });
+  fs.cpSync(from, to, { recursive: true });
+}
+
+/** Number of files in a tree, for reporting what a backup actually contains. */
+function countFiles(dir: string): number {
+  if (!fs.existsSync(dir)) return 0;
+  let n = 0;
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    n += e.isDirectory() ? countFiles(path.join(dir, e.name)) : 1;
+  }
+  return n;
+}
+
+/**
+ * Write a complete backup into `dest`: the database AND the encrypted files.
+ *
+ * A backup that holds only the database restores every record while losing
+ * every document and photo those records point at — and the client list still
+ * looks right afterwards, so nobody notices until they open a passport scan.
+ */
+function writeFullBackup(dest: string): { path: string; files: number } {
+  fs.mkdirSync(dest, { recursive: true });
+  getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  fs.copyFileSync(dbPath(), path.join(dest, 'alaqsa.db'));
+  copyTree(filesDir(), path.join(dest, 'files'));
+  const files = countFiles(path.join(dest, 'files'));
+  fs.writeFileSync(
+    path.join(dest, 'backup.json'),
+    JSON.stringify({ version: 2, createdAt: new Date().toISOString(), files }, null, 2),
+    'utf-8',
+  );
+  return { path: dest, files };
 }
 
 export function registerIpcHandlers(ctx: AppContext): void {
@@ -1138,37 +1181,65 @@ export function registerIpcHandlers(ctx: AppContext): void {
   handle('backup:now', () => {
     requireUnlocked(ctx);
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const dest = path.join(backupsDir(), `alaqsa-backup-${stamp}.db`);
-    // The DB is already encrypted at rest, so a file copy is a safe backup.
-    getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
-    fs.copyFileSync(dbPath(), dest);
-    auditRepo.log('backup', 'app', undefined, dest);
-    return { path: dest };
+    // A folder, not a file: the database alone is only half the shop.
+    const dest = path.join(backupsDir(), `alaqsa-backup-${stamp}`);
+    const res = writeFullBackup(dest);
+    auditRepo.log('backup', 'app', undefined, `${dest} (${res.files} files)`);
+    return res;
   });
 
   handle('backup:exportEncrypted', async () => {
     requireUnlocked(ctx);
     const res = await dialog.showSaveDialog({
       title: 'تصدير نسخة احتياطية مشفّرة',
-      defaultPath: path.join(app.getPath('documents'), `alaqsa-backup-${Date.now()}.db`),
+      defaultPath: path.join(app.getPath('documents'), `alaqsa-backup-${Date.now()}`),
       filters: [{ name: 'AlAqsa Backup', extensions: ['db'] }],
     });
     if (res.canceled || !res.filePath) throw new Error('CANCELLED');
-    getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
-    fs.copyFileSync(dbPath(), res.filePath);
-    auditRepo.log('export', 'backup', undefined, res.filePath);
-    return { path: res.filePath };
+    // Strip any .db the dialog appended: this produces a folder.
+    const dest = res.filePath.replace(/\.db$/i, '');
+    const out = writeFullBackup(dest);
+    auditRepo.log('export', 'backup', undefined, `${dest} (${out.files} files)`);
+    return out;
   });
 
+  /**
+   * Restore a backup.
+   *
+   * Accepts both shapes: a folder written by the current version (database +
+   * encrypted files), and a bare .db from an older one. The old shape is still
+   * honoured so existing backups are not orphaned — but it can only bring the
+   * records back, so the reply says how many files came with it.
+   */
   handle('backup:restore', (sourcePath: string) => {
     requireUnlocked(ctx);
     if (!fs.existsSync(sourcePath)) throw new Error('FILE_NOT_FOUND');
+
+    const isFolder = fs.statSync(sourcePath).isDirectory();
+    const dbSource = isFolder ? path.join(sourcePath, 'alaqsa.db') : sourcePath;
+    if (!fs.existsSync(dbSource)) throw new Error('FILE_NOT_FOUND');
+
     closeDatabase();
-    fs.copyFileSync(sourcePath, dbPath());
+
+    // Replace the database, clearing its side files so a stale WAL from the
+    // current database cannot be replayed over the restored one.
+    for (const f of [`${dbPath()}-wal`, `${dbPath()}-shm`]) {
+      if (fs.existsSync(f)) fs.rmSync(f, { force: true });
+    }
+    fs.copyFileSync(dbSource, dbPath());
+
+    // Replace the encrypted file store, when the backup carries one.
+    let files = 0;
+    if (isFolder && fs.existsSync(path.join(sourcePath, 'files'))) {
+      fs.rmSync(filesDir(), { recursive: true, force: true });
+      copyTree(path.join(sourcePath, 'files'), filesDir());
+      files = countFiles(filesDir());
+    }
+
     openDatabase(ctx.secure.getSqlcipherKey());
-    auditRepo.log('restore', 'backup', undefined, sourcePath);
+    auditRepo.log('restore', 'backup', undefined, `${sourcePath} (${files} files)`);
     notifyDataChanged(ctx, 'all');
-    return null;
+    return { files, hadFiles: isFolder };
   });
 
   /**
@@ -1181,9 +1252,10 @@ export function registerIpcHandlers(ctx: AppContext): void {
     if (!ctx.secure.unlockWithPassword(password)) throw new Error('WRONG_PASSWORD');
 
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const safety = path.join(backupsDir(), `before-reset-${stamp}.db`);
-    getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
-    fs.copyFileSync(dbPath(), safety);
+    // The safety copy has to include the documents, since the reset below
+    // deletes the whole file store.
+    const safety = path.join(backupsDir(), `before-reset-${stamp}`);
+    writeFullBackup(safety);
 
     closeDatabase();
     for (const f of [dbPath(), `${dbPath()}-wal`, `${dbPath()}-shm`]) {
@@ -1198,6 +1270,23 @@ export function registerIpcHandlers(ctx: AppContext): void {
   });
 
   // ---- files -------------------------------------------------------------
+  /**
+   * Pick a backup to restore.
+   *
+   * A current backup is a FOLDER (database + encrypted files) while older ones
+   * are a bare .db, so the dialog has to allow both — a file-only picker made
+   * folder backups unselectable.
+   */
+  handle('files:pickBackup', async () => {
+    const res = await dialog.showOpenDialog({
+      title: 'اختر نسخة احتياطية',
+      properties: ['openFile', 'openDirectory'],
+      defaultPath: backupsDir(),
+      filters: [{ name: 'AlAqsa Backup', extensions: ['db'] }],
+    });
+    return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0];
+  });
+
   handle('files:pickOpen', async (filters?: { name: string; extensions: string[] }[]) => {
     const res = await dialog.showOpenDialog({
       properties: ['openFile'],

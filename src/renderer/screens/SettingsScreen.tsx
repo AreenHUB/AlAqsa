@@ -648,7 +648,7 @@ function NetworkTab() {
 
 // ---------------------------------------------------------------------------
 function DataTab() {
-  const { t } = useI18n();
+  const { t, fmt } = useI18n();
   const toast = useToast();
   const errMsg = useErrorMessage();
   const [busy, setBusy] = useState('');
@@ -672,6 +672,7 @@ function DataTab() {
     setBusy('');
     if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(`${t.settings.backupCreated}: ${res.data.path}`);
+    toast.success(fmt(t.settings.backupFiles, { n: res.data.files }));
   };
 
   const exportBackup = async () => {
@@ -683,13 +684,17 @@ function DataTab() {
   };
 
   const restore = async () => {
-    const picked = await window.alaqsa.files.pickOpen([{ name: 'AlAqsa Backup', extensions: ['db'] }]);
+    const picked = await window.alaqsa.files.pickBackup();
     if (!picked.ok || !picked.data) return;
     setBusy('restore');
     const res = await window.alaqsa.backup.restore(picked.data);
     setBusy('');
     if (!res.ok) return toast.error(errMsg(res.error));
     toast.success(t.msg.updated);
+    // An older .db backup carries no documents. Say so plainly rather than
+    // let the owner discover it when a passport scan will not open.
+    if (!res.data.hadFiles) toast.warning(t.settings.restoreNoFiles);
+    else toast.success(fmt(t.settings.restoreFiles, { n: res.data.files }));
   };
 
   const seedDemo = async () => {

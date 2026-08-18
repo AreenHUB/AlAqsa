@@ -338,14 +338,16 @@ export interface IpcApi {
     recent(limit: number): Promise<Result<AuditEntry[]>>;
   };
   backup: {
-    now(): Promise<Result<{ path: string }>>;
-    exportEncrypted(): Promise<Result<{ path: string }>>;
-    restore(sourcePath: string): Promise<Result<null>>;
+    now(): Promise<Result<{ path: string; files: number }>>;
+    exportEncrypted(): Promise<Result<{ path: string; files: number }>>;
+    restore(sourcePath: string): Promise<Result<{ files: number; hadFiles: boolean }>>;
     /** Wipes ALL data back to empty. Requires the master password. */
     factoryReset(password: string): Promise<Result<null>>;
   };
   files: {
     pickOpen(filters?: { name: string; extensions: string[] }[]): Promise<Result<string | null>>;
+    /** Pick a backup folder (current) or .db file (older backups). */
+    pickBackup(): Promise<Result<string | null>>;
     pickSave(defaultName: string): Promise<Result<string | null>>;
     saveDataUrl(dataUrl: string, suggestedName: string): Promise<Result<MediaRef>>;
     importDocument(sourcePath: string): Promise<Result<MediaRef>>;
